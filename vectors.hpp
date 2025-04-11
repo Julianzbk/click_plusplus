@@ -1,27 +1,12 @@
 #pragma once
 
 #include <iostream>
+#include <concepts>
 
 #pragma region containers
-#include <vector>
-template <typename T>
-std::ostream& operator<< (std::ostream& out, std::vector<T> v)
-{
-    out << '[';
-    int i = 0;
-    int size = v.size();
-    for (; i < size - 1; ++i)
-    {
-        out << v[i] << ", ";
-    }
-    out << v[size - 1];
-    out << ']';
-    return out;
-}
-
 #include <array>
 template <typename T, size_t N>
-std::ostream& operator<< (std::ostream& out, std::array<T, N> const& v)
+std::ostream& operator << (std::ostream& out, std::array<T, N> const& v)
 {
     static_assert(N > 0);
     out << '[';
@@ -34,7 +19,31 @@ std::ostream& operator<< (std::ostream& out, std::array<T, N> const& v)
     out << ']';
     return out;
 }
+
+#include <vector>
+template <typename T>
+std::ostream& operator << (std::ostream& out, std::vector<T> v)
+{
+    out << '[';
+    int i = 0;
+    int size = v.size();
+    for (; i < size - 1; ++i)
+    {
+        out << v[i] << ", ";
+    }
+    out << v[size - 1];
+    out << ']';
+    return out;
+}
 #pragma endregion containers
+
+// CUDA API
+#include <cuda_runtime.h>
+#include <cuda_bf16.h>
+
+extern "C" void _dot_product_vector(const nv_bfloat16* _A, const nv_bfloat16* _B,
+                                    const nv_bfloat16* _partial, size_t _N);
+
 
 // Overloading operators for only scalar operations, or simple operations with the same type.
 template <typename dtype>
@@ -57,6 +66,16 @@ std::array<dtype, M> operator + (std::array<dtype, M> const& V, std::array<dtype
         sum[i] = V[i] + U[i];
     }
     return sum;
+}
+
+template <typename dtype, size_t M>
+std::array<dtype, M>& operator += (std::array<dtype, M>& V, std::array<dtype, M> const& U)
+{
+    for (size_t i = 0; i < M; ++i)
+    {
+        V[i] += U[i];
+    }
+    return V;
 }
 
 template <typename dtype>
@@ -94,10 +113,23 @@ std::array<dtype, M>& operator -= (std::array<dtype, M>& V, std::array<dtype, M>
 template <typename itype, typename dtype, size_t M>
 std::array<dtype, M> operator * (itype A, std::array<dtype, M> const& V)
 {
+    static_assert(!std::is_same<itype, std::array<dtype, M>>::value);
     std::array<dtype, M> U;
     for (size_t i = 0; i < M; ++i)
     {
         U[i] = V[i] * A;
+    }
+    return U;
+}
+
+template <typename itype, typename dtype, size_t M>
+std::array<dtype, M> operator / (std::array<dtype, M> const& V, itype A)
+{
+    static_assert(!std::is_same<itype, std::array<dtype, M>>::value);
+    std::array<dtype, M> U;
+    for (size_t i = 0; i < M; ++i)
+    {
+        U[i] = V[i] / A;
     }
     return U;
 }
