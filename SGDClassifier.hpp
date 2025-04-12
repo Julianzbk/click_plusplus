@@ -11,8 +11,10 @@
 
 #ifdef USE_DEVICE
     #include "vectors_device.hpp"
+    using bf16 = nv_bfloat16;
 #else
     #include "vectors_host.hpp"
+    // using bf16 = std::bfloat16_t;
 #endif
 
 
@@ -59,13 +61,13 @@ double error(std::vector<dtype> const& pred,
              std::vector<dtype> const& Y)
 {
     assert(pred.size() == Y.size());
-    size_t n_correct = 0;
+    size_t n_wrong = 0;
     for (size_t i = 0; i < pred.size(); ++i)
     {
-        if (pred[i] == Y[i])
-            ++n_correct;
+        if (pred[i] != Y[i])
+            ++n_wrong;
     }
-    return static_cast<double>(n_correct) / pred.size();
+    return static_cast<double>(n_wrong) / pred.size();
 }
 #pragma endregion utility
 
@@ -154,19 +156,41 @@ public:
                 dtype h = sigmoid(z);
                 dtype error = h - yi;
                 std::array<dtype, M> grad = error * xi; // scalar mult with an array here.
-                theta_ -= lr * (grad + lambda * theta_); // another scalar mult.
+                std::cout << "\npre-theta: " << theta_ << std::endl;
+                std::array<dtype, M> pena = lambda * theta_;
+                std::cout << "lambda: " << lambda << "\npenalty: " << pena << std::endl;
+                theta_ -= lr * (grad + pena); // another scalar mult.
+                std::cout << "post-theta: " << theta_ << std::endl;
+
                 bias_ -= lr * error;
+                
+                for (dtype t: theta_)
+                {
+                    if (std::isinf(t))
+                    {
+                        std::cout << "inf! yi: " << yi << "\nxi:" << xi << std::endl;
+                        std::cout << "error: " << error << "\ngrad:\n" << grad << std::endl;
+                        return;
+                    }
+                    if (std::isnan(t))
+                    {
+                        std::cout << "nan! yi:\n" << yi << "\nh:\n" << h << std::endl;
+                        std::cout << "z:\n" << h << "\nbias_:\n" << bias_ << std::endl;
+                        return;
+                    }
+                }
             }
             
             if (epoch % CALC_LOSS_EVERY == 0)
             {
+                std::cout << "pre matmul" << std::endl;
                 std::vector<dtype> Z = dot(theta_, X);
                 for (size_t i = 0; i < Z.size(); ++i)
                 {
                     Z[i] = sigmoid(Z[i] + bias_);
                 }
                 loss = this->loss(Z, Y);
-
+                
                 if (PRINT_LOSS_EVERY > 0 && epoch % PRINT_LOSS_EVERY == 0)
                     std::cout << std::format("Epoch {}: Loss = {:.10f}\n", epoch, loss);
 

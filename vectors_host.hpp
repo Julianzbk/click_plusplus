@@ -170,6 +170,11 @@ std::vector<dtype> dot(std::array<dtype, M> const& T,
     for (size_t i = 0; i < N; ++i)
     {
         Y[i] = dot(X[i], T) + bias;
+        if (std::isnan(Y[i]))
+        {
+            std::cout << "nan! " << "i = " << i << "\nxi = " << X[i] << "\nT = " << T << std::endl;
+            while (true);
+        }
     }
     return Y;
 }

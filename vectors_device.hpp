@@ -41,6 +41,8 @@ std::ostream& operator << (std::ostream& out, std::vector<T> v)
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
 #pragma region bf16_operators
+// Inefficient host-side operators that casts to float first.
+// If using dtype = bf16, the model should do all operations in CUDA device.
 std::ostream& operator << (std::ostream& out, nv_bfloat16 bf)
 {
     out << static_cast<float>(bf);
@@ -76,7 +78,7 @@ nv_bfloat16 operator / (nv_bfloat16 lhs, itype rhs)
 #pragma endregion bf16_operators
 
 
-extern "C" nv_bfloat16 dot_product_vector_bf16(const nv_bfloat16* A, const nv_bfloat16* B, size_t N);
+extern "C" float dot_product_vector_float(const float* A, const float* B, size_t N);
 
 
 // Overloading operators for only scalar operations, or simple operations with the same type.
@@ -173,20 +175,20 @@ template <typename dtype>
 inline dtype dot(std::vector<dtype> const& V, std::vector<dtype> const& U)
 {
     assert(V.size() == U.size());
-    return dot_product_vector_bf16(V.data(), U.data(), V.size());
+    return dot_product_vector_float(V.data(), U.data(), V.size());
 }
 
 template <typename dtype, size_t M>
 inline dtype dot(std::vector<dtype> const& V, std::array<dtype, M> const& U)
 {
     assert(V.size() == U.size());
-    return dot_product_vector_bf16(V.data(), U.data(), V.size());
+    return dot_product_vector_float(V.data(), U.data(), V.size());
 }
 
 template <typename dtype, size_t M>
 inline dtype dot(std::array<dtype, M> const& V, std::array<dtype, M> const& U)
 {
-    return dot_product_vector_bf16(V.data(), U.data(), M);
+    return dot_product_vector_float(V.data(), U.data(), M);
 }
 
 template <typename dtype, size_t M>

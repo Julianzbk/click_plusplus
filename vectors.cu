@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <cstdio>
 
-template <typename dtype = nv_bfloat16>
+template <typename dtype = float>
 __global__
 void dot_product_vector(const dtype* A, const dtype* B, dtype* partial, size_t N)
 {
@@ -31,7 +31,7 @@ void dot_product_vector(const dtype* A, const dtype* B, dtype* partial, size_t N
     }
 }
 
-extern "C" nv_bfloat16 dot_product_vector_bf16(const nv_bfloat16* h_A, const nv_bfloat16* h_B, size_t N)
+extern "C" float dot_product_vector_float(const float* h_A, const float* h_B, size_t N)
 {
     /*
         Copies host vector to cudaMalloc'd vector, and performs dot product,
@@ -39,21 +39,21 @@ extern "C" nv_bfloat16 dot_product_vector_bf16(const nv_bfloat16* h_A, const nv_
     */
     constexpr size_t threads_per_block = 256;
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
-    const size_t size = N * sizeof(nv_bfloat16);
+    const size_t size = N * sizeof(float);
 
-    nv_bfloat16 *A, *B, *partial;
+    float *A, *B, *partial;
     cudaMalloc(&A, size);
     cudaMalloc(&B, size);
-    cudaMalloc(&partial, blocks_per_grid * sizeof(nv_bfloat16));
+    cudaMalloc(&partial, blocks_per_grid * sizeof(float));
     cudaMemcpy(A, h_A, size, cudaMemcpyHostToDevice);
     cudaMemcpy(B, h_B, size, cudaMemcpyHostToDevice);
 
-    dot_product_vector<nv_bfloat16> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(nv_bfloat16)>>>
+    dot_product_vector<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
         (A, B, partial, N);
     
-    nv_bfloat16* h_partial = new nv_bfloat16[blocks_per_grid];
-    cudaMemcpy(h_partial, partial, blocks_per_grid * sizeof(nv_bfloat16), cudaMemcpyDeviceToHost);
-    nv_bfloat16 prod = 0;
+    float* h_partial = new float[blocks_per_grid];
+    cudaMemcpy(h_partial, partial, blocks_per_grid * sizeof(float), cudaMemcpyDeviceToHost);
+    float prod = 0;
     for (size_t i = 0; i < blocks_per_grid; ++i)
     {
         prod += h_partial[i];
