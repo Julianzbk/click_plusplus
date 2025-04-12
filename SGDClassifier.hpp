@@ -69,6 +69,42 @@ double error(std::vector<dtype> const& pred,
     }
     return static_cast<double>(n_wrong) / pred.size();
 }
+
+struct ConfusionMatrix
+{
+    size_t true_negative = 0;
+    size_t false_positive = 0;
+    size_t false_negative = 0;
+    size_t true_positive = 0;
+
+    friend std::ostream& operator << (std::ostream& out, ConfusionMatrix M)
+    {
+        out << "ConfusionMatrix:\n";
+        out << std::format("| {}\t{:<4}|\n", M.true_negative, M.false_positive);
+        out << std::format("| {}\t{:<4}|", M.false_negative, M.true_positive) << std::endl;
+        return out;
+    }
+};
+
+template <class dtype>
+ConfusionMatrix confusion_matrix(std::vector<dtype> const& pred,
+                                 std::vector<dtype> const& Y)
+{
+    assert(pred.size() == Y.size());
+    ConfusionMatrix conf;
+    for (size_t i = 0; i < pred.size(); ++i)
+    {
+        if (pred[i] == 0 && Y[i] == 0)
+            ++conf.true_negative;
+        else if (pred[i] == 0 && Y[i] == 1)
+            ++conf.false_negative;
+        else if (pred[i] == 1 && Y[i] == 0)
+            ++conf.false_positive;
+        else if (pred[i] == 1 && Y[i] == 1)
+            ++conf.true_positive;
+    }
+    return conf;
+}
 #pragma endregion utility
 
 template <class dtype, size_t M>
@@ -91,8 +127,8 @@ public:
     static constexpr double CONVERGED_THRESH = 1e-4;
 
     SGDClassifier(float lr = 0.01, float lambda = 0.01, uint32_t max_epochs = 100, bool early_stop = false)
-        :theta_(std::array<dtype, M>()), bias_(dtype()),
-         early_stop(early_stop), lr(lr), max_epochs(max_epochs)
+        :theta_(std::array<dtype, M>()), bias_(dtype()), lr(lr), lambda(lambda),
+         max_epochs(max_epochs), early_stop(early_stop)
     {
     }
 
@@ -156,34 +192,13 @@ public:
                 dtype h = sigmoid(z);
                 dtype error = h - yi;
                 std::array<dtype, M> grad = error * xi; // scalar mult with an array here.
-                std::cout << "\npre-theta: " << theta_ << std::endl;
-                std::array<dtype, M> pena = lambda * theta_;
-                std::cout << "lambda: " << lambda << "\npenalty: " << pena << std::endl;
-                theta_ -= lr * (grad + pena); // another scalar mult.
-                std::cout << "post-theta: " << theta_ << std::endl;
-
+                std::array<dtype, M> penalty = lambda * theta_;
+                theta_ -= lr * (grad + penalty); // another scalar mult.
                 bias_ -= lr * error;
-                
-                for (dtype t: theta_)
-                {
-                    if (std::isinf(t))
-                    {
-                        std::cout << "inf! yi: " << yi << "\nxi:" << xi << std::endl;
-                        std::cout << "error: " << error << "\ngrad:\n" << grad << std::endl;
-                        return;
-                    }
-                    if (std::isnan(t))
-                    {
-                        std::cout << "nan! yi:\n" << yi << "\nh:\n" << h << std::endl;
-                        std::cout << "z:\n" << h << "\nbias_:\n" << bias_ << std::endl;
-                        return;
-                    }
-                }
             }
             
             if (epoch % CALC_LOSS_EVERY == 0)
             {
-                std::cout << "pre matmul" << std::endl;
                 std::vector<dtype> Z = dot(theta_, X);
                 for (size_t i = 0; i < Z.size(); ++i)
                 {
