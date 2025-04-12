@@ -40,9 +40,43 @@ std::ostream& operator << (std::ostream& out, std::vector<T> v)
 // CUDA API
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
+#pragma region bf16_operators
+std::ostream& operator << (std::ostream& out, nv_bfloat16 bf)
+{
+    out << static_cast<float>(bf);
+    return out;
+}
 
-extern "C" void _dot_product_vector(const nv_bfloat16* _A, const nv_bfloat16* _B,
-                                    const nv_bfloat16* _partial, size_t _N);
+#include <compare>
+auto operator <=> (nv_bfloat16 lhs, nv_bfloat16 rhs)
+{
+    return static_cast<float>(lhs) <=> static_cast<float>(rhs);
+}
+
+template <typename itype>
+auto operator <=> (nv_bfloat16 lhs, itype rhs)
+{
+    static_assert(!std::is_same<itype, nv_bfloat16>::value);
+    return static_cast<float>(lhs) <=> rhs;
+}
+
+template <typename itype>
+nv_bfloat16 operator * (itype lhs, nv_bfloat16 rhs)
+{
+    static_assert(!std::is_same<itype, nv_bfloat16>::value);
+    return lhs * static_cast<float>(rhs);
+}
+
+template <typename itype>
+nv_bfloat16 operator / (nv_bfloat16 lhs, itype rhs)
+{
+    static_assert(!std::is_same<itype, nv_bfloat16>::value);
+    return static_cast<float>(lhs), rhs;
+}
+#pragma endregion bf16_operators
+
+
+extern "C" nv_bfloat16 dot_product_vector_bf16(const nv_bfloat16* A, const nv_bfloat16* B, size_t N);
 
 
 // Overloading operators for only scalar operations, or simple operations with the same type.
@@ -136,36 +170,23 @@ std::array<dtype, M> operator / (std::array<dtype, M> const& V, itype A)
 
 
 template <typename dtype>
-dtype dot(std::vector<dtype> const& V, std::vector<dtype> const& U)
+inline dtype dot(std::vector<dtype> const& V, std::vector<dtype> const& U)
 {
-    dtype acc = dtype();
-    for (size_t i = 0; i < V.size(); ++i)
-    {
-        acc += V[i] * U[i];
-    }
-    return acc;
+    assert(V.size() == U.size());
+    return dot_product_vector_bf16(V.data(), U.data(), V.size());
 }
 
 template <typename dtype, size_t M>
-dtype dot(std::vector<dtype> const& V, std::array<dtype, M> const& U)
+inline dtype dot(std::vector<dtype> const& V, std::array<dtype, M> const& U)
 {
-    dtype acc = dtype();
-    for (size_t i = 0; i < M; ++i)
-    {
-        acc += V[i] * U[i];
-    }
-    return acc;
+    assert(V.size() == U.size());
+    return dot_product_vector_bf16(V.data(), U.data(), V.size());
 }
 
 template <typename dtype, size_t M>
-dtype dot(std::array<dtype, M> const& V, std::array<dtype, M> const& U)
+inline dtype dot(std::array<dtype, M> const& V, std::array<dtype, M> const& U)
 {
-    dtype acc = dtype();
-    for (size_t i = 0; i < M; ++i)
-    {
-        acc += V[i] * U[i];
-    }
-    return acc;
+    return dot_product_vector_bf16(V.data(), U.data(), M);
 }
 
 template <typename dtype, size_t M>
@@ -181,20 +202,3 @@ std::vector<dtype> dot(std::array<dtype, M> const& T,
     }
     return Y;
 }
-
-/*
-template <typename dtype>
-std::vector<dtype> matmul(std::vector<std::vector<dtype>> const& A,
-                          std::vector<std::vector<dtype>> const& X)
-{
-    std::vector<dtype> B(d);
-    for (std::vector<dtype> i: A)
-    {
-        for (std::vector<dtype> j: X)
-        {
-            acc = V * u;
-        }
-    }
-    return acc;
-}
-*/

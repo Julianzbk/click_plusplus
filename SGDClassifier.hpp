@@ -6,11 +6,15 @@
 #include <numeric>
 #include <random>
 #include <algorithm>
-#include <stdfloat>
 #include <cstdint>
 #include <cassert>
 
-#include "vectors.hpp"
+#ifdef USE_DEVICE
+    #include "vectors_device.hpp"
+#else
+    #include "vectors_host.hpp"
+#endif
+
 
 #pragma region utility
 inline bool float_approx(double a, double b, double epsilon = 1e-9)
@@ -220,7 +224,7 @@ public:
 void test_example()
 {
     /*
-    using bf16 = std::bfloat16_t;
+    using bf16 = nv_bfloat16;
     using std::cout, std::endl;
     auto model = SGDClassifier<bf16, 2>(0.1, 0.01, 1000);
     std::vector<std::array<bf16, 2>> X_tr(4);
