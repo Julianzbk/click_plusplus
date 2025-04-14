@@ -112,21 +112,22 @@ ConfusionMatrix confusion_matrix(std::vector<dtype> const& pred,
 }
 #pragma endregion utility
 
-template <typename dtype, size_t M> 
+template < typename dtype, size_t M,
+#ifdef USE_CUDA
+    template <typename> class Vector = DeviceVector,
+    template <typename, size_t> class Array = DeviceArray,
+    class Matrix = DeviceMatrix<dtype, M>
+#else
+    template <typename> class Vector = std::vector,
+    template <typename, size_t> class Array = std::array,
+    class Matrix = std::vector<std::array<dtype, M>>
+#endif
+         >
 class SGDClassifier
 {
     /*
         Logistic Regression Classifier with Stochastic Gradient Descent.
     */
-#ifdef USE_CUDA
-    using Vector = DeviceVector<dtype>;
-    using Array = DeviceArray<dtype, M>;
-    using Matrix = DeviceMatrix<dtype, M>;
-#else
-    using Vector = std::vector<dtype>;
-    using Array = std::array<dtype, M>;
-    using Matrix = std::vector<std::array<dtype, M>>;
-#endif
 public:
     Array theta_;
     dtype bias_;
