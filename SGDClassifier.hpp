@@ -9,12 +9,17 @@
 #include <cstdint>
 #include <cassert>
 
-#ifdef USE_DEVICE
+constexpr enum class Device {cpu, cuda};
+// for control flow with if constexpr
+
+#ifdef USE_CUDA
     #include "vectors_device.hpp"
     using bf16 = nv_bfloat16;
+    constexpr Device DEVICE = Device::cuda;
 #else
     #include "vectors_host.hpp"
     // using bf16 = std::bfloat16_t;
+    constexpr Device DEVICE = Device::cpu;
 #endif
 
 
@@ -107,15 +112,23 @@ ConfusionMatrix confusion_matrix(std::vector<dtype> const& pred,
 }
 #pragma endregion utility
 
-template <class dtype, size_t M>
+template <typename dtype, size_t M> 
 class SGDClassifier
 {
     /*
         Logistic Regression Classifier with Stochastic Gradient Descent.
     */
-    using Matrix = std::vector<std::array<dtype, M>>; // use if you'd like.
+#ifdef USE_CUDA
+    using Vector = DeviceVector<dtype>;
+    using Array = DeviceArray<dtype, M>;
+    using Matrix = DeviceMatrix<dtype, M>;
+#else
+    using Vector = std::vector<dtype>;
+    using Array = std::array<dtype, M>;
+    using Matrix = std::vector<std::array<dtype, M>>;
+#endif
 public:
-    std::array<dtype, M> theta_;
+    Array theta_;
     dtype bias_;
     float lr;
     float lambda;
@@ -142,7 +155,7 @@ public:
         return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
     }
 
-    static double loss(dtype h, std::vector<dtype> const& Y)
+    static double loss(dtype h, Vector const& Y)
     {
         double acc = 0.0;
         const double proba = log(h + 1e-15);
@@ -154,8 +167,7 @@ public:
         return -acc / Y.size();
     }
 
-    static double loss(std::vector<dtype> const& H,
-                       std::vector<dtype> const& Y)
+    static double loss(Vector const& H, Vector const& Y)
     {
         double acc = 0.0;
         for (size_t i = 0; i < H.size(); ++i)
@@ -165,8 +177,7 @@ public:
         return -acc / Y.size();
     }
 
-    void fit(std::vector<std::array<dtype, M>> const& X,
-             std::vector<dtype> const& Y)
+    void fit(Matrix const& X, Vector const& Y)
     {
         assert(X.size() == Y.size());
         // Zero out the weights
@@ -185,21 +196,21 @@ public:
             // std::cout << "i = " << i << "\n";
             // for (size_t i = 0; i < X.size(); ++i) // Use for loop instead to train on full dataset.
             {
-                std::array<dtype, M> xi = X[i];
+                Array xi = X[i];
                 xi[0] = 0;
                 dtype yi = Y[i];
                 dtype z = dot(xi, theta_) + bias_;
                 dtype h = sigmoid(z);
                 dtype error = h - yi;
-                std::array<dtype, M> grad = error * xi; // scalar mult with an array here.
-                std::array<dtype, M> penalty = lambda * theta_;
+                Array grad = error * xi; // scalar mult with an array here.
+                Array penalty = lambda * theta_;
                 theta_ -= lr * (grad + penalty); // another scalar mult.
                 bias_ -= lr * error;
             }
             
             if (epoch % CALC_LOSS_EVERY == 0)
             {
-                std::vector<dtype> Z = dot(theta_, X);
+                Vector Z = dot(theta_, X);
                 for (size_t i = 0; i < Z.size(); ++i)
                 {
                     Z[i] = sigmoid(Z[i] + bias_);
@@ -224,12 +235,12 @@ public:
         std::cout << std::format("Training has ended after {} Epochs with Loss = {:.10f}.", epoch - 1, loss) << std::endl;
     }
 
-    void partial_fit(std::array<dtype, M> const& x, dtype const& y)
+    void partial_fit(Array const& x, dtype const& y)
     {
         dtype z = dot(x, theta_) + bias_;
         dtype h = sigmoid(z);
         dtype error = h - y;
-        std::array<dtype, M> grad = error * x; // scalar mult with an array here.
+        Array grad = error * x; // scalar mult with an array here.
         theta_ -= lr * grad; // another scalar mult.
         bias_ -= lr * error;
             
@@ -241,17 +252,17 @@ public:
         }
     }
 
-    std::vector<dtype> predict_proba(std::vector<std::array<dtype, M>> const& X)
+    Vector predict_proba(Matrix const& X)
     {
-        std::vector<dtype> Z = dot(theta_, X);
+        Vector Z = dot(theta_, X);
         for (size_t i = 0; i < Z.size(); ++i)
         {
             Z[i] = sigmoid(Z[i] + bias_);
         }
         return Z;
     }
-
-    std::vector<dtype> predict(std::vector<std::array<dtype, M>> const& X)
+ 
+    Vector predict(Matrix const& X)
     {
         auto proba = predict_proba(X);
         std::transform(proba.cbegin(), proba.cend(),
