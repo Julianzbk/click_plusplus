@@ -79,10 +79,9 @@ nv_bfloat16 operator / (nv_bfloat16 lhs, itype rhs)
 }
 #pragma endregion bf16_operators
 
-
 extern "C" float dot_vector_float(const float* A, const float* B, size_t N);
 
-
+#pragma region redundant
 // Overloading operators for only scalar operations, or simple operations with the same type.
 template <typename dtype>
 std::vector<dtype> operator + (std::vector<dtype> const& V, dtype A)
@@ -172,7 +171,6 @@ std::array<dtype, M> operator / (std::array<dtype, M> const& V, itype A)
     return U;
 }
 
-
 template <typename dtype>
 inline dtype dot(std::vector<dtype> const& V, std::vector<dtype> const& U)
 {
@@ -215,7 +213,7 @@ std::vector<dtype> dot(std::array<dtype, M> const& T,
     }
     return Y;
 }
-
+#pragma endregion redundant
 
 
 template <class dtype>
@@ -249,6 +247,13 @@ public:
         cudaFree(buf);
     }
 
+    std::vector<dtype> to_host() const
+    {
+        std::vector<dtype> host(size);
+        cudaMemcpy(host.data(), buf, size * sizeof(dtype), cudaMemcpyDeviceToHost);
+        return host;
+    }
+
     dtype operator [] (size_t idx) const
     {// BAD
         std::cout << "BAD!" << std::endl;
@@ -257,6 +262,12 @@ public:
         return host;
     }
 };
+
+template <typename dtype>
+DeviceVector<dtype> to_device(std::vector<dtype> const& V)
+{
+    return DeviceVector(V);
+}
 
 template <typename T>
 std::ostream& operator << (std::ostream& out, DeviceVector<T> V)
@@ -278,7 +289,7 @@ std::ostream& operator << (std::ostream& out, DeviceVector<T> V)
 }
 
 
-template <class dtype, size_t M>
+template <typename dtype, size_t M>
 class DeviceArray
 {
 public:
@@ -312,6 +323,13 @@ public:
         return M;
     }
 
+    std::array<dtype, M> to_host() const
+    {
+        std::array<dtype, M> host(size);
+        cudaMemcpy(host.data(), buf, M * sizeof(dtype), cudaMemcpyDeviceToHost);
+        return host;
+    }
+
     dtype operator [] (size_t idx) const
     {// BAD
         dtype host;
@@ -319,6 +337,12 @@ public:
         return host;
     }
 };
+
+template <typename dtype, size_t M>
+DeviceArray<dtype, M> to_device(std::array<dtype, M> const& A)
+{
+    return DeviceArray(A);
+}
 
 template <typename T, size_t N>
 std::ostream& operator << (std::ostream& out, DeviceArray<T, N> const& A)
@@ -340,7 +364,7 @@ std::ostream& operator << (std::ostream& out, DeviceArray<T, N> const& A)
 }
 
 
-template <class dtype, size_t M>
+template <typename dtype, size_t M>
 class DeviceMatrix
 {
 public:
@@ -359,6 +383,11 @@ public:
         }
     }
 
+    ~DeviceMatrix()
+    {
+        cudaFree(buf);
+    }
+
     size_t N() const
     {
         return size;
@@ -372,11 +401,16 @@ public:
     }
 };
 
+template <typename dtype, size_t M>
+DeviceMatrix<dtype, M> to_device(std::vector<std::array<dtype, M>> const& V)
+{
+    return DeviceMatrix(V);
+}
+
 template <typename T, size_t N>
 std::ostream& operator << (std::ostream& out, DeviceMatrix<T, N> const& M)
 {
     static_assert(N > 0);
-
     out << "Matrix(" << N << ", " << M.size << ")";
     return out;
 }
@@ -498,16 +532,30 @@ inline dtype dot(DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
         std::cout << "dot: dtype not implemented!" << std::endl;
 }
 
+extern "C" float* vector_dot_matrix_float(const float* T, const float* X, size_t M, size_t N, float bias);
+
 template <typename dtype, size_t M>
 DeviceVector<dtype> dot(DeviceArray<dtype, M> const& T,
-                        DeviceVector<DeviceArray<dtype, M>> const& X,
-                        dtype bias = dtype())
+                        DeviceMatrix<dtype, M> const& X,
+                        dtype bias = 0)
 {
-    size_t N = X.size();
-    DeviceVector<dtype> Y(N);
-    for (size_t i = 0; i < N; ++i)
-    {
-        Y[i] = dot(X[i], T) + bias;
-    }
+    DeviceVector<dtype> Y(X.size);
+    if constexpr (std::is_same_v<dtype, float>)
+        Y.buf = vector_dot_matrix_float(T.data, X.data, M, X.size, bias);
+    else
+        std::cout << "matrix dot : dtype not implemented!" << std::endl;
+    return Y;
+}
+
+template <typename dtype, size_t M>
+DeviceVector<dtype> dot_transform(DeviceArray<dtype, M> const& T,
+                                  DeviceMatrix<dtype, M> const& X,
+                                  dtype bias = 0, UnaryOp thunk = NoOpThunk)
+{
+    DeviceVector<dtype> Y(X.size);
+    if constexpr (std::is_same_v<dtype, float>)
+        Y.buf = vector_dot_matrix_float(T.data, X.data, bias, M, X.size);
+    else
+        std::cout << "matrix dot : dtype not implemented!" << std::endl;
     return Y;
 }
