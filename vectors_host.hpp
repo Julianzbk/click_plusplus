@@ -174,6 +174,20 @@ std::vector<dtype> dot(std::array<dtype, M> const& T,
     return Y;
 }
 
+template <typename dtype, size_t M>
+std::vector<dtype> dot(std::array<dtype, M> const& T,
+                        std::vector<std::array<dtype, M>> const& X,
+                        dtype bias, dtype (*thunk)(dtype) )
+{
+    size_t N = X.size();
+    std::vector<dtype> Y(N);
+    for (size_t i = 0; i < N; ++i)
+    {
+        Y[i] = (*thunk)(dot(X[i], T) + bias);
+    }
+    return Y;
+}
+
 /*
 template <typename dtype>
 std::vector<dtype> matmul(std::vector<std::vector<dtype>> const& A,
