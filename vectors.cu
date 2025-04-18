@@ -1,15 +1,18 @@
+#pragma once
+
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
 #include <cstdlib>
 #include <cstdio>
 
 constexpr size_t threads_per_block = 256;
+constexpr auto device_no_op = [] __device__ (auto x) {return x;};
 
-
-
+namespace device
+{
 template <typename dtype = float>
 __global__
-void dot_vector_step(const dtype* A, const dtype* B, dtype* partial, size_t N)
+void vector_dot_step(const dtype* A, const dtype* B, dtype* partial, size_t N)
 {
     extern __shared__ dtype cache[];
 
@@ -35,7 +38,7 @@ void dot_vector_step(const dtype* A, const dtype* B, dtype* partial, size_t N)
     }
 }
 
-extern "C" float host_dot_vector_float(const float* h_A, const float* h_B, size_t N)
+extern "C" float host_vector_dot_float(const float* h_A, const float* h_B, size_t N)
 {
     /*  DEPRECATED
         Copies host vector to cudaMalloc'd vector, and performs dot product,
@@ -51,7 +54,7 @@ extern "C" float host_dot_vector_float(const float* h_A, const float* h_B, size_
     cudaMemcpy(A, h_A, size, cudaMemcpyHostToDevice);
     cudaMemcpy(B, h_B, size, cudaMemcpyHostToDevice);
 
-    dot_vector_step<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
+    vector_dot_step<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
         (A, B, partial, N);
     
     float* h_partial = new float[blocks_per_grid];
@@ -70,16 +73,17 @@ extern "C" float host_dot_vector_float(const float* h_A, const float* h_B, size_
     return prod;
 }
 
+// TODO replace __host__ with __global__ and compare performance
 template <typename dtype = float>
-__global__
-dtype dot_vector(const dtype* d_A, const dtype* d_B, size_t N)
+__host__
+dtype vector_dot(const dtype* d_A, const dtype* d_B, size_t N)
 {
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
     dtype* partial;
     cudaMalloc(&partial, blocks_per_grid * sizeof(dtype));
 
-    dot_vector_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
+    vector_dot_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
         (d_A, d_B, partial, N);
     
     dtype* h_partial = new dtype[blocks_per_grid];
@@ -96,155 +100,159 @@ dtype dot_vector(const dtype* d_A, const dtype* d_B, size_t N)
     return prod;
 }
 
-extern "C" inline float dot_vector_float(const float* d_A, const float* d_B, size_t N)
-{
-    /*
-        Performs dot product directly on device memory.
-    */
-   return dot_vector<float>(d_A, d_B, N);
-}
-
-
 template <class dtype>
 __global__
-void vector_add_vector(const dtype* V, const dtype* U, dtype* dest, size_t N)
+void vector_add_vector_step(dtype* dest, const dtype* V, const dtype* U, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     dest[i] = (i < N) ? V[i] + U[i] : dtype(); // operation step
 }
 
-extern "C" float* vector_add_vector_float(const float* V, const float* U, size_t N)
+template <class dtype>
+__host__
+dtype* vector_add_vector(const dtype* V, const dtype* U, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
-    float* dest;
-    cudaMalloc(&dest, N * sizeof(float));
+    dtype* dest;
+    cudaMalloc(&dest, N * sizeof(dtype));
 
-    vector_add_vector<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
-        (V, U, dest, N);
+    vector_add_vector_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (dest, V, U, N);
     
     return dest;
 }
 
 template <class dtype>
 __global__
-void vector_addassign_vector(dtype* V, const dtype* U, size_t N)
+void vector_addassign_vector_step(dtype* V, const dtype* U, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     V[i] += (i < N) ? U[i] : dtype();
 }
 
-extern "C" void vector_addassign_vector_float(float* V, const float* U, size_t N)
+template <class dtype>
+__host__
+void vector_addassign_vector(dtype* V, const dtype* U, size_t N)
 {
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
-    vector_addassign_vector<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
+    vector_addassign_vector_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
         (V, U, N);
 }
 
 template <class dtype>
 __global__
-void vector_sub_scalar(const dtype* V, dtype A, dtype* dest, size_t N)
+void vector_sub_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     dest[i] += (i < N) ? V[i] - A : dtype();
 }
 
-extern "C" float* vector_sub_scalar_float(const float* V, float A, size_t N)
+template <class dtype>
+__host__
+dtype* vector_sub_scalar(const dtype* V, dtype A, size_t N)
 {
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
-    float* dest;
-    cudaMalloc(&dest, N * sizeof(float));
+    dtype* dest;
+    cudaMalloc(&dest, N * sizeof(dtype));
 
-    vector_sub_scalar<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
-        (V, A, dest, N);
+    vector_sub_scalar_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (dest, V, A, N);
     return dest;
 }
 
 template <class dtype>
 __global__
-void vector_sub_vector(const dtype* V, const dtype* U, dtype* dest, size_t N)
+void vector_sub_vector_step(dtype* dest, const dtype* V, const dtype* U, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     dest[i] = (i < N) ? V[i] - U[i] : dtype(); // operation step
 }
 
-extern "C" float* vector_sub_vector_float(const float* V, const float* U, size_t N)
+template <class dtype>
+__host__
+dtype* vector_sub_vector(const dtype* V, const dtype* U, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
-    float* dest;
-    cudaMalloc(&dest, N * sizeof(float));
+    dtype* dest;
+    cudaMalloc(&dest, N * sizeof(dtype));
 
-    vector_sub_vector<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
-        (V, U, dest, N);
+    vector_sub_vector_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (dest, V, U, N);
     
     return dest;
 }
 
 template <class dtype>
 __global__
-void vector_subassign_vector(dtype* V, const dtype* U, size_t N)
+void vector_subassign_vector_step(dtype* V, const dtype* U, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     V[i] -= (i < N) ? U[i] : dtype();
 }
 
-extern "C" void vector_subassign_vector_float(float* V, const float* U, size_t N)
+template <class dtype>
+__host__
+void vector_subassign_vector(dtype* V, const dtype* U, size_t N)
 {
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
-    vector_subassign_vector<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
+    vector_subassign_vector_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
         (V, U, N);
 }
 
 template <class dtype>
 __global__
-void vector_mul_scalar(const dtype* V, dtype A, dtype* dest, size_t N)
+void vector_mul_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     dest[i] += (i < N) ? V[i] * A : dtype();
 }
 
-extern "C" float* vector_mul_scalar_float(const float* V, float A, size_t N)
+template <class dtype>
+__host__
+dtype* vector_mul_scalar(const dtype* V, dtype A, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
-    float* dest;
-    cudaMalloc(&dest, N * sizeof(float));
+    dtype* dest;
+    cudaMalloc(&dest, N * sizeof(dtype));
 
-    vector_mul_scalar<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
-        (V, A, dest, N);
+    vector_mul_scalar_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (dest, V, A, N);
     
     return dest;
 }
 
 template <class dtype>
 __global__
-void vector_div_scalar(const dtype* V, dtype A, dtype* dest, size_t N)
+void vector_div_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     dest[i] += (i < N) ? V[i] / A : dtype();
 }
 
-extern "C" float* vector_div_scalar_float(const float* V, float A, size_t N)
+template <class dtype>
+__host__
+dtype* vector_div_scalar(const dtype* V, dtype A, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
-    float* dest;
-    cudaMalloc(&dest, N * sizeof(float));
+    dtype* dest;
+    cudaMalloc(&dest, N * sizeof(dtype));
 
-    vector_div_scalar<float> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(float)>>>
-        (V, A, dest, N);
+    vector_div_scalar_step<dtype> <<<blocks_per_grid, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (dest, V, A, N);
     
     return dest;
 }
 
-
 template <typename dtype>
 __global__
-void vector_dot_matrix_step(const dtype* T, const dtype* X, dtype* dest, size_t M, size_t N, dtype bias)
+void vector_dot_matrix_step(dtype* dest, const dtype* T, const dtype* X, size_t M, size_t N, dtype bias)
 {
     unsigned int row = blockIdx.x;
     if (row >= N)
@@ -278,57 +286,42 @@ void vector_dot_matrix_step(const dtype* T, const dtype* X, dtype* dest, size_t 
 }
 
 template <typename dtype>
-__global__
+__host__
 dtype* vector_dot_matrix(const dtype* T, const dtype* X, size_t M, size_t N, dtype bias = 0)
 {
     dtype* dest;
     cudaMalloc(&dest, M * N * sizeof(dtype));
-    vector_dot_matrix<float> <<<N, threads_per_block, threads_per_block * sizeof(float)>>>
-        (T, X, dest, M, N, bias);
+    vector_dot_matrix_step<dtype> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (dest, T, X, M, N, bias);
     return dest;
 }
 
-extern "C" float* vector_dot_matrix_float(const float* T, const float* X, size_t M, size_t N, float bias = 0.0f)
+template <typename dtype, class UnaryOp>
+__global__
+dtype* vector_transform_step(dtype* dest, const dtype* X, size_t N,
+                             dtype bias, UnaryOp thunk)
 {
-    return vector_dot_matrix<float>(T, X, M, N, bias);
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N)
+        dest[i] = thunk(X[i] + bias);
 }
 
-
-#pragma region functions
-
-auto NoOpThunk = [] __device__ (auto x) {return x;};
-
-extern "C" inline auto device_no_op()
+template <typename dtype, class UnaryOp>
+__host__
+dtype* vector_transform(const dtype* X, size_t N,
+                        dtype bias = 0, UnaryOp thunk = device_no_op)
 {
-    return NoOpThunk;
+    dtype* dest;
+    cudaMalloc(&dest, N * sizeof(dtype));
+    vector_dot_matrix_transform_step<dtype> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (dest, X, N, bias, thunk);
+    return dest;
 }
-
-auto sigmoid = [] __device__ (auto z)
-{
-    return 1 / (1 + std::exp(-z));
-};
-
-extern "C" inline float device_sigmoid_float(float z)
-{
-    return sigmoid(z);
-}
-
-auto log_loss = [] __device__ (auto h, auto y)
-{
-    return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
-};
-
-extern "C" inline float device_log_loss_float(float h, float y)
-{
-    return log_loss(h, y);
-}
-#pragma endregion functions
-
 
 template <typename dtype, class UnaryOp>
 __global__
-void vector_dot_matrix_transform_step(const dtype* T, const dtype* X, dtype* dest,
-                                      dtype bias, size_t M, size_t N, UnaryOp thunk)
+void vector_dot_matrix_transform_step(dtype* dest, const dtype* T, const dtype* X, 
+                                      size_t M, size_t N, dtype bias, UnaryOp thunk)
 {
     unsigned int row = blockIdx.x;
     if (row >= N)
@@ -362,62 +355,71 @@ void vector_dot_matrix_transform_step(const dtype* T, const dtype* X, dtype* des
 }
 
 template <typename dtype, class UnaryOp>
-__global__
+__host__
 dtype* vector_dot_matrix_transform(const dtype* T, const dtype* X, size_t M, size_t N,
-                                   dtype bias = 0, UnaryOp thunk = NoOpThunk)
+                                   dtype bias = 0, UnaryOp thunk = device_no_op)
 {
     dtype* dest;
     cudaMalloc(&dest, M * N * sizeof(dtype));
-    vector_dot_matrix_transform_step<float> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
-        (T, X, dest, M, N, bias, thunk);
+    vector_dot_matrix_transform_step<dtype> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (dest, T, X, M, N, bias, thunk);
     return dest;
 }
 
-extern "C" float* vector_dot_matrix_sigmoid_float(const float* T, const float* X, size_t M, size_t N,
-                                                  float bias = 0.0)
-{
-    return vector_dot_matrix_transform<float>(T, X, M, N, bias, sigmoid);
-}
-
-template <typename dtype, class UnaryOp>
+template <typename dtype, typename itype, class UnaryOp>
 __global__
-void vector_reduce_step(const )
+void vector_reduce_step(itype* dest, const dtype* V, size_t N,
+                        dtype bias, UnaryOp thunk)
 {
-
-}
-
-template <typename dtype, class UnaryOp>
-__global__
-dtype* vector_reduce(const dtype* T, const dtype* X, size_t M, size_t N,
-                     dtype bias = 0, UnaryOp thunk = NoOpThunk)
-{
-    dtype* dest;
-    cudaMalloc(&dest, M * N * sizeof(dtype));
-    vector_dot_matrix_transform_step<float> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
-        (T, X, dest, M, N, bias, thunk);
-    return dest;
-}
-
-template <typename dtype>
-dtype log_loss(dtype h, const dtype* Y, size_t N)
-{
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= N)
+        return;
     
-    double acc = 0.0;
-    const double proba = log(h + 1e-15);
-    const double proba_bar = log(1 - h + 1e-15);
-    for (dtype y: Y)
+    extern __shared__ dtype cache[];
+
+    unsigned int tid = threadIdx.x;
+    const dtype* row_ptr = X + row * M;
+    dtype partial = 0;
+    for (int j = tid; j < M; j += blockDim.x)
     {
-        acc += y * proba + (1 - y) * proba_bar;
+        partial += T[j] * row_ptr[j];
     }
-    return -acc / Y.size();
+    cache[tid] = partial;
+    __syncthreads();
+
+    for (int s = blockDim.x / 2; s > 0; s >>= 1)
+    {
+        if (tid < s)
+        {
+            cache[tid] += cache[tid + s];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0)
+    {
+        *dest = thunk(cache[0] + bias)
+    }
 }
 
-static double log_loss(Vector const& H, Vector const& Y)
+template <typename dtype, typename itype = dtype, class UnaryOp>
+__global__
+itype* vector_reduce(const dtype* V, size_t N,
+                     dtype bias = 0, UnaryOp thunk = device_no_op)
 {
-    double acc = 0.0;
-    for (size_t i = 0; i < H.size(); ++i)
-    {
-        acc += Y[i] * log(H[i] + 1e-15) + (1 - Y[i]) * log(1 - H[i] + 1e-15);
-    }
-    return -acc / Y.size();
+    itype dest = itype(); // single variable output TODO: replace bias with itype acc?
+    vector_reduce_step<dtype, itype, UnaryOp> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (&dest, V, N, bias, thunk);
+    return dest;
+}
+
+
+template <typename dtype, typename itype = dtype, class BinaryOp>
+__global__
+itype* vector_double_reduce(const dtype* V, const dtype* U, size_t N,
+                            itype acc = itype(), BinaryOp thunk = device_no_op)
+{
+    vector_reduce_step<dtype, itype, BinaryOp> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (&acc, X, N, bias, thunk);
+    return acc;
 }
