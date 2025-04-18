@@ -122,10 +122,12 @@ class SGDClassifier
     using Vector = DeviceVector<dtype>;
     using Array = DeviceArray<dtype, M>;
     using Matrix = DeviceMatrix<dtype, M>;
+    using namespace device;
 #else
     using Vector = std::vector<dtype>;
     using Array = std::array<dtype, M>;
     using Matrix = std::vector<std::array<dtype, M>>;
+    using namespace host;
 #endif
 public:
     Array theta_;
@@ -140,75 +142,30 @@ public:
     static constexpr double CONVERGED_THRESH = 1e-4;
 
     SGDClassifier(float lr = 0.01, float lambda = 0.01, uint32_t max_epochs = 100, bool early_stop = false)
-        :theta_(std::array<dtype, M>()), bias_(dtype()), lr(lr), lambda(lambda),
+        :theta_(Array()), bias_(dtype()), lr(lr), lambda(lambda),
          max_epochs(max_epochs), early_stop(early_stop)
     {
     }
-#ifdef USE_CUDA
-    static inline dtype sigmoid(dtype z)
+
+    static inline dtype activ(dtype z)
     {
-        match_type_call(device_sigmoid, z, "sigmoid");
-        if constexpr (std::is_same_v<dtype, float>)
-            return device_sigmoid_float(z);
-        else
-            std::cout << "operator - : dtype not implemented!" << std::endl;
+        return sigmoid(z);
     }
 
     static inline double loss(dtype h, dtype y)
     {
-        return device_log_loss_float(h, y);
-    }
-
-    static inline double loss(dtype h, Vector const& Y)
-    {
-        return device_scalar_log_loss_vector_float(h, Y.buf, Y.size)
-        double acc = 0.0;
-        const double proba = log(h + 1e-15);
-        const double proba_bar = log(1 - h + 1e-15);
-        for (dtype y: Y)
-        {
-            acc += y * proba + (1 - y) * proba_bar;
-        }
-        return -acc / Y.size();
-    }
-
-    static inline double loss(Vector const& H, Vector const& Y)
-    {
-        return device_vector_log_loss_vector_float
-    }
-#else
-    static inline dtype sigmoid(dtype z)
-    {
-        return 1 / (1 + std::exp(-z));
-    }
-
-    static double loss(dtype h, dtype y)
-    {
-        return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
+        return log_loss(h, y);
     }
 
     static double loss(dtype h, Vector const& Y)
     {
-        double acc = 0.0;
-        const double proba = log(h + 1e-15);
-        const double proba_bar = log(1 - h + 1e-15);
-        for (dtype y: Y)
-        {
-            acc += y * proba + (1 - y) * proba_bar;
-        }
-        return -acc / Y.size();
+        return scalar_log_loss_vector(h, Y);
     }
 
     static double loss(Vector const& H, Vector const& Y)
     {
-        double acc = 0.0;
-        for (size_t i = 0; i < H.size(); ++i)
-        {
-            acc += Y[i] * log(H[i] + 1e-15) + (1 - Y[i]) * log(1 - H[i] + 1e-15);
-        }
-        return -acc / Y.size();
+        return vector_log_loss_vector(H, Y);
     }
-#endif
 
     void fit(Matrix const& X, Vector const& Y)
     {
@@ -243,11 +200,7 @@ public:
             
             if (epoch % CALC_LOSS_EVERY == 0)
             {
-                Vector Z = dot(theta_, X);
-                for (size_t i = 0; i < Z.size(); ++i)
-                {
-                    Z[i] = sigmoid(Z[i] + bias_);
-                }
+                Vector Z = dot_transform(theta_, X, bias_, sigmoid); // TODO change sigmoid to activ?
                 loss = this->loss(Z, Y);
                 
                 if (PRINT_LOSS_EVERY > 0 && epoch % PRINT_LOSS_EVERY == 0)
@@ -279,25 +232,22 @@ public:
             
         if (PRINT_LOSS_EVERY > 0)
         {
-            dtype z = dot(theta_, x);
-            z = sigmoid(z + bias_);
-            std::cout << std::format("Partial-fit: Loss = {:.5f}\n", loss(z, y));
+            std::cout << std::format("Partial-fit: Loss = {:.5f}\n", loss(h, y));
         }
     }
 
     Vector predict_proba(Matrix const& X)
     {
-        Vector Z = dot(theta_, X);
-        for (size_t i = 0; i < Z.size(); ++i)
-        {
-            Z[i] = sigmoid(Z[i] + bias_);
-        }
-        return dot_transform(, _);
+        return dot_transform(theta_, X, bias_, sigmoid);
     }
  
     Vector predict(Matrix const& X)
     {
-        auto proba = predict_proba(X);
+    #ifdef USE_CUDA
+        std::vector<dtype> proba = predict_proba(X).to_host();
+    #else
+        std::vector<dtype> proba = predict_proba(X);
+    #endif
         std::transform(proba.cbegin(), proba.cend(),
                        proba.begin(), [](dtype p){return p >= 0.5 ? 1 : 0;});
         return proba;

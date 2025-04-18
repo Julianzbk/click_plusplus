@@ -37,6 +37,48 @@ std::ostream& operator << (std::ostream& out, std::vector<T> v)
 }
 #pragma endregion containers
 
+#pragma region functions
+namespace host
+{
+    constexpr auto no_op = [](auto x) {return x;};
+
+    constexpr auto sigmoid = [](auto z)
+    {
+        return 1 / (1 + std::exp(-z));
+    };
+
+    constexpr double log_loss = [](auto h, auto y)
+    {
+        return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
+    };
+
+    template <typename dtype>
+    double scalar_log_loss_vector(dtype h, std::vector<dtype> const& Y)
+    {
+        double acc = 0.0;
+        const double proba = log(h + 1e-15);
+        const double proba_bar = log(1 - h + 1e-15);
+        for (dtype y: Y)
+        {
+            acc += y * proba + (1 - y) * proba_bar;
+        }
+        return -acc / Y.size();
+    }
+
+    template <typename dtype>
+    double vector_log_loss_vector(std::vector<dtype> const& H, std::vector<dtype> const& Y)
+    {
+        double acc = 0.0;
+        for (size_t i = 0; i < H.size(); ++i)
+        {
+            acc += Y[i] * log(H[i] + 1e-15) + (1 - Y[i]) * log(1 - H[i] + 1e-15);
+        }
+        return -acc / Y.size();
+    }
+};
+using namespace host;
+#pragma endregion functions
+
 // Overloading operators for only scalar operations, or simple operations with the same type.
 template <typename dtype>
 std::vector<dtype> operator + (std::vector<dtype> const& V, dtype A)
@@ -174,16 +216,16 @@ std::vector<dtype> dot(std::array<dtype, M> const& T,
     return Y;
 }
 
-template <typename dtype, size_t M>
-std::vector<dtype> dot(std::array<dtype, M> const& T,
-                        std::vector<std::array<dtype, M>> const& X,
-                        dtype bias, dtype (*thunk)(dtype) )
+template <typename dtype, size_t M, class UnaryOp>
+std::vector<dtype> dot_transform(std::array<dtype, M> const& T,
+                                 std::vector<std::array<dtype, M>> const& X,
+                                 dtype bias = 0, UnaryOp thunk = no_op)
 {
     size_t N = X.size();
     std::vector<dtype> Y(N);
     for (size_t i = 0; i < N; ++i)
     {
-        Y[i] = (*thunk)(dot(X[i], T) + bias);
+        Y[i] = thunk(dot(X[i], T) + bias);
     }
     return Y;
 }
