@@ -5,13 +5,6 @@
 
 constexpr size_t threads_per_block = 256;
 
-using UnaryOp = float (*)(float);
-
-__device__ float no_op_thunk(float arg)
-{
-    return arg;
-}
-constexpr UnaryOp NoOpThunk = &no_op_thunk;
 
 
 template <typename dtype = float>
@@ -300,7 +293,40 @@ extern "C" float* vector_dot_matrix_float(const float* T, const float* X, size_t
     return vector_dot_matrix<float>(T, X, M, N, bias);
 }
 
-template <typename dtype>
+
+#pragma region functions
+
+auto NoOpThunk = [] __device__ (auto x) {return x;};
+
+extern "C" inline auto device_no_op()
+{
+    return NoOpThunk;
+}
+
+auto sigmoid = [] __device__ (auto z)
+{
+    return 1 / (1 + std::exp(-z));
+};
+
+extern "C" inline float device_sigmoid_float(float z)
+{
+    return sigmoid(z);
+}
+
+auto log_loss = [] __device__ (auto h, auto y)
+{
+    return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
+};
+
+extern "C" inline float device_log_loss_float(float h, float y)
+{
+    return log_loss(h, y);
+}
+#pragma endregion functions
+
+
+template <typename dtype, class UnaryOp>
+__global__
 void vector_dot_matrix_transform_step(const dtype* T, const dtype* X, dtype* dest,
                                       dtype bias, size_t M, size_t N, UnaryOp thunk)
 {
@@ -331,24 +357,67 @@ void vector_dot_matrix_transform_step(const dtype* T, const dtype* X, dtype* des
 
     if (tid == 0)
     {
-        dest[row] = (*thunk)(cache[0] + bias); // Applies the transform operation
+        dest[row] = thunk(cache[0] + bias); // Applies the transform operation
     }
 }
 
-template <typename dtype>
+template <typename dtype, class UnaryOp>
 __global__
 dtype* vector_dot_matrix_transform(const dtype* T, const dtype* X, size_t M, size_t N,
                                    dtype bias = 0, UnaryOp thunk = NoOpThunk)
 {
     dtype* dest;
     cudaMalloc(&dest, M * N * sizeof(dtype));
-    vector_dot_matrix_transform_step<float> <<<N, threads_per_block, threads_per_block * sizeof(float)>>>
+    vector_dot_matrix_transform_step<float> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
         (T, X, dest, M, N, bias, thunk);
     return dest;
 }
 
-extern "C" float* vector_dot_matrix_transform_float(const float* T, const float* X, size_t M, size_t N,
-                                                    float bias = 0.0, UnaryOp thunk = NoOpThunk)
+extern "C" float* vector_dot_matrix_sigmoid_float(const float* T, const float* X, size_t M, size_t N,
+                                                  float bias = 0.0)
 {
-    return vector_dot_matrix_transform<float>(T, X, M, N, bias, thunk);
+    return vector_dot_matrix_transform<float>(T, X, M, N, bias, sigmoid);
+}
+
+template <typename dtype, class UnaryOp>
+__global__
+void vector_reduce_step(const )
+{
+
+}
+
+template <typename dtype, class UnaryOp>
+__global__
+dtype* vector_reduce(const dtype* T, const dtype* X, size_t M, size_t N,
+                     dtype bias = 0, UnaryOp thunk = NoOpThunk)
+{
+    dtype* dest;
+    cudaMalloc(&dest, M * N * sizeof(dtype));
+    vector_dot_matrix_transform_step<float> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (T, X, dest, M, N, bias, thunk);
+    return dest;
+}
+
+template <typename dtype>
+dtype log_loss(dtype h, const dtype* Y, size_t N)
+{
+    
+    double acc = 0.0;
+    const double proba = log(h + 1e-15);
+    const double proba_bar = log(1 - h + 1e-15);
+    for (dtype y: Y)
+    {
+        acc += y * proba + (1 - y) * proba_bar;
+    }
+    return -acc / Y.size();
+}
+
+static double log_loss(Vector const& H, Vector const& Y)
+{
+    double acc = 0.0;
+    for (size_t i = 0; i < H.size(); ++i)
+    {
+        acc += Y[i] * log(H[i] + 1e-15) + (1 - Y[i]) * log(1 - H[i] + 1e-15);
+    }
+    return -acc / Y.size();
 }

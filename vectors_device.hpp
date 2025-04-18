@@ -79,7 +79,122 @@ nv_bfloat16 operator / (nv_bfloat16 lhs, itype rhs)
 }
 #pragma endregion bf16_operators
 
+#pragma region extern
+
 extern "C" float dot_vector_float(const float* A, const float* B, size_t N);
+
+template <typename dtype>
+inline dtype* dot_vector(const dtype* A, const dtype* B, size_t N)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        return dot_vector_float(A, B, N);
+    else
+        std::cout << __func__ << " : dtype not implemented!" << std::endl;
+}
+
+extern "C" float* vector_add_vector_float(const float* V, const float* U, size_t N);
+
+template <typename dtype>
+inline dtype* vector_add_vector(const dtype* V, const dtype* U, size_t N)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        return vector_add_vector_float(V, U, N);
+    else
+        std::cout << __func__ << " : dtype not implemented!" << std::endl;
+}
+
+extern "C" void vector_addassign_vector_float(float* V, const float* U, size_t N);
+
+template <typename dtype>
+inline void vector_addassign_vector(dtype* V, const dtype* U, size_t N)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        vector_addassign_vector_float(V, U, N);
+    else
+        std::cout  << __func__ << ": dtype not implemented!" << std::endl;
+}
+
+extern "C" float* vector_sub_scalar_float(const float* V, float A, size_t N);
+
+template <typename dtype> 
+inline dtype* vector_sub_scalar_float(const dtype* V, dtype A, size_t N)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        vector_sub_scalar_float(V, A, N);
+    else
+        std::cout  << __func__ << ": dtype not implemented!" << std::endl;
+}
+
+extern "C" float* vector_sub_vector_float(const float* V, const float* U, size_t N);
+
+template <typename dtype>
+inline dtype* vector_sub_vector(const dtype* V, const dtype* U, size_t N)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        return vector_sub_vector_float(V, U, N);
+    else
+        std::cout << __func__ << " : dtype not implemented!" << std::endl;
+}
+
+extern "C" void vector_subassign_vector_float(float* V, const float* U, size_t N);
+
+template <typename dtype>
+inline void vector_subassign_vector(dtype* V, const dtype* U, size_t N)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        vector_subassign_vector_float(V, U, N);
+    else
+        std::cout  << __func__ << ": dtype not implemented!" << std::endl;
+}
+
+extern "C" float* vector_mul_scalar_float(const float* V, float A, size_t N);
+
+template <typename dtype>
+inline dtype* vector_mul_scalar(const dtype* V, dtype A, size_t N)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        vector_mul_scalar_float(V, A, N);
+    else
+        std::cout  << __func__ << ": dtype not implemented!" << std::endl;
+}
+
+extern "C" float* vector_div_scalar_float(const float* V, float A, size_t N);
+
+template <typename dtype>
+inline dtype* vector_div_scalar(const dtype* V, dtype A, size_t N)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        vector_div_scalar_float(V, A, N);
+    else
+        std::cout  << __func__ << ": dtype not implemented!" << std::endl;
+}
+
+extern "C" float* vector_dot_matrix_float(const float* T, const float* X, size_t M, size_t N, float bias);
+
+template <typename dtype>
+inline dtype* vector_dot_matrix(const dtype* T, const dtype* X, size_t M, size_t N, dtype bias)
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        return vector_dot_matrix_float(T.data, X.data, M, X.size, bias);
+    else
+        std::cout << "matrix dot : dtype not implemented!" << std::endl;
+}
+
+template <typename dtype>
+inline dtype* vector_dot_matrix_transform(const dtype* T, const dtype* X, size_t M, size_t N,
+                                          dtype bias, )
+{
+    if constexpr (std::is_same_v<dtype, float>)
+        return vector_dot_matrix_float(T.data, X.data, M, X.size, bias);
+    else
+        std::cout << "matrix dot : dtype not implemented!" << std::endl;
+}
+
+extern "C" inline auto device_no_op();
+extern "C" inline float device_sigmoid_float(float z);
+extern "C" inline float device_log_loss_float(float h, float y);
+
+#pragma endregion extern
 
 #pragma region redundant
 // Overloading operators for only scalar operations, or simple operations with the same type.
@@ -215,7 +330,6 @@ std::vector<dtype> dot(std::array<dtype, M> const& T,
 }
 #pragma endregion redundant
 
-
 template <class dtype>
 class DeviceVector
 {
@@ -252,6 +366,11 @@ public:
         std::vector<dtype> host(size);
         cudaMemcpy(host.data(), buf, size * sizeof(dtype), cudaMemcpyDeviceToHost);
         return host;
+    }
+
+    dtype* data() const
+    {
+        return buf;
     }
 
     dtype operator [] (size_t idx) const
@@ -321,6 +440,11 @@ public:
     constexpr size_t size() const
     {
         return M;
+    }
+
+    dtype* data() const
+    {
+        return buf;
     }
 
     std::array<dtype, M> to_host() const
@@ -393,6 +517,11 @@ public:
         return size;
     }
 
+    dtype* data() const
+    {
+        return buf;
+    }
+
     DeviceArray<dtype, M> operator [] (size_t idx) const
     {
         DeviceArray<dtype, M> x;
@@ -415,94 +544,59 @@ std::ostream& operator << (std::ostream& out, DeviceMatrix<T, N> const& M)
     return out;
 }
 
-extern "C" float* vector_add_vector_float(const float* V, const float* U, size_t N);
-
 template <typename dtype, size_t M>
 DeviceArray<dtype, M> operator + (DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
 {
     DeviceArray<dtype, M> sum;
-    if constexpr (std::is_same_v<dtype, float>)
-        sum.buf = vector_add_vector_float(V.buf, U.buf, M);
-    else
-        std::cout << "operator + : dtype not implemented!" << std::endl;
+    sum.buf = vector_add_vector<dtype>(V.buf, U.buf, M);
     return sum;
 }
-
-extern "C" void vector_addassign_vector_float(float* V, const float* U, size_t N);
 
 template <typename dtype, size_t M>
 DeviceArray<dtype, M>& operator += (DeviceArray<dtype, M>& V, DeviceArray<dtype, M> const& U)
 {
-    if constexpr (std::is_same_v<dtype, float>)
-        vector_addassign_vector_float(V.buf, U.buf, M);
-    else
-        std::cout << "operator + : dtype not implemented!" << std::endl;
+    vector_addassign_vector<dtype>(V.buf, U.buf, M);
     return V;
 }
-
-extern "C" float* vector_sub_scalar_float(const float* V, float A, size_t N);
 
 template <typename dtype>
 DeviceVector<dtype> operator - (DeviceVector<dtype> const& V, dtype A)
 {
     DeviceVector<dtype> diff;
-    if constexpr (std::is_same_v<dtype, float>)
-        diff.buf = vector_sub_scalar_float(V.buf, A, V.size);
-    else
-        std::cout << "operator - : dtype not implemented!" << std::endl;
+    diff.buf = vector_sub_scalar<dtype>(V.buf, A, V.size);
     return diff;
 }
-
-extern "C" float* vector_sub_vector_float(const float* V, const float* U, size_t N);
 
 template <typename dtype, size_t M>
 DeviceArray<dtype, M> operator - (DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
 {
     DeviceArray<dtype, M> diff;
-    if constexpr (std::is_same_v<dtype, float>)
-        diff.buf = vector_sub_vector_float(V.buf, U.buf, M);
-    else
-        std::cout << "operator - : dtype not implemented!" << std::endl;
+    diff.buf = vector_sub_vector<dype>(V.buf, U.buf, M);
     return diff;
 }
-
-extern "C" void vector_subassign_vector_float(float* V, const float* U, size_t N);
 
 template <typename dtype, size_t M>
 DeviceArray<dtype, M>& operator -= (DeviceArray<dtype, M>& V, DeviceArray<dtype, M> const& U)
 {
-    if constexpr (std::is_same_v<dtype, float>)
-        vector_subassign_vector_float(V.buf, U.buf, M);
-    else
-        std::cout << "operator -= : dtype not implemented!" << std::endl;
+    vector_subassign_vector<dtype>(V.buf, U.buf, M);
     return V;
 }
-
-extern "C" float* vector_mul_scalar_float(const float* V, float A, size_t N);
 
 template <typename itype, typename dtype, size_t M>
 DeviceArray<dtype, M> operator * (itype A, DeviceArray<dtype, M> const& V)
 {
     static_assert(!std::is_same_v<itype, DeviceArray<dtype, M>>);
     DeviceArray<dtype, M> U;
-    if constexpr (std::is_same_v<dtype, float>)
-        U.buf = vector_mul_scalar_float(V.buf, A, M);
-    else
-        std::cout << "operator * : dtype not implemented!" << std::endl;
+    U.buf = vector_mul_scalar<dtype>(V.buf, A, M);
     return U;
 }
-
-extern "C" float* vector_div_scalar_float(const float* V, float A, size_t N);
 
 template <typename itype, typename dtype, size_t M>
 DeviceArray<dtype, M> operator / (DeviceArray<dtype, M> const& V, itype A)
 {
     static_assert(!std::is_same_v<itype, DeviceArray<dtype, M>>);
     DeviceArray<dtype, M> U;
-    if constexpr (std::is_same_v<dtype, float>)
-        U.buf = vector_div_scalar_float(V.buf, A, M);
-    else
-        std::cout << "operator / : dtype not implemented!" << std::endl;
+    U.buf = vector_div_scalar<dtype>(V.buf, A, M);
     return U;
 }
 
@@ -510,29 +604,21 @@ template <typename dtype>
 inline dtype dot(DeviceVector<dtype> const& V, DeviceVector<dtype> const& U)
 {
     assert(V.size == U.size);
-    return dot_vector_float(V.buf, U.buf, V.size);
+    return dot_vector<dtype>(V.buf, U.buf, V.size);
 }
 
 template <typename dtype, size_t M>
 inline dtype dot(DeviceVector<dtype> const& V, DeviceArray<dtype, M> const& U)
 {
     assert(V.size == M);
-    if constexpr (std::is_same_v<dtype, float>)
-        return dot_vector_float(V.buf, U.buf, M);
-    else
-        std::cout << "dot: dtype not implemented!" << std::endl;
+    return dot_vector<dtype>(V.buf, U.buf, M);
 }
 
 template <typename dtype, size_t M>
 inline dtype dot(DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
 {
-    if constexpr (std::is_same_v<dtype, float>)
-        return dot_vector_float(V.buf, U.buf, M);
-    else
-        std::cout << "dot: dtype not implemented!" << std::endl;
+    return dot_vector<dtype>(V.buf, U.buf, M);
 }
-
-extern "C" float* vector_dot_matrix_float(const float* T, const float* X, size_t M, size_t N, float bias);
 
 template <typename dtype, size_t M>
 DeviceVector<dtype> dot(DeviceArray<dtype, M> const& T,
@@ -540,22 +626,16 @@ DeviceVector<dtype> dot(DeviceArray<dtype, M> const& T,
                         dtype bias = 0)
 {
     DeviceVector<dtype> Y(X.size);
-    if constexpr (std::is_same_v<dtype, float>)
-        Y.buf = vector_dot_matrix_float(T.data, X.data, M, X.size, bias);
-    else
-        std::cout << "matrix dot : dtype not implemented!" << std::endl;
+    Y.buf = vector_dot_matrix<dtype>(T.buf, X.buf, M, X.size, bias);
     return Y;
 }
 
-template <typename dtype, size_t M>
+template <typename dtype, size_t M, class DeviceLambda>
 DeviceVector<dtype> dot_transform(DeviceArray<dtype, M> const& T,
                                   DeviceMatrix<dtype, M> const& X,
-                                  dtype bias = 0, UnaryOp thunk = NoOpThunk)
+                                  dtype bias = 0, DeviceLambda thunk = device_no_op)
 {
     DeviceVector<dtype> Y(X.size);
-    if constexpr (std::is_same_v<dtype, float>)
-        Y.buf = vector_dot_matrix_float(T.data, X.data, bias, M, X.size);
-    else
-        std::cout << "matrix dot : dtype not implemented!" << std::endl;
+    Y.buf = vector_dot_matrix_transform<float>(T.buf, X.buf, M, X.size, bias, thunk);
     return Y;
 }
