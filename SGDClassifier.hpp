@@ -144,7 +144,39 @@ public:
          max_epochs(max_epochs), early_stop(early_stop)
     {
     }
+#ifdef USE_CUDA
+    static inline dtype sigmoid(dtype z)
+    {
+        match_type_call(device_sigmoid, z, "sigmoid");
+        if constexpr (std::is_same_v<dtype, float>)
+            return device_sigmoid_float(z);
+        else
+            std::cout << "operator - : dtype not implemented!" << std::endl;
+    }
 
+    static inline double loss(dtype h, dtype y)
+    {
+        return device_log_loss_float(h, y);
+    }
+
+    static inline double loss(dtype h, Vector const& Y)
+    {
+        return device_scalar_log_loss_vector_float(h, Y.buf, Y.size)
+        double acc = 0.0;
+        const double proba = log(h + 1e-15);
+        const double proba_bar = log(1 - h + 1e-15);
+        for (dtype y: Y)
+        {
+            acc += y * proba + (1 - y) * proba_bar;
+        }
+        return -acc / Y.size();
+    }
+
+    static inline double loss(Vector const& H, Vector const& Y)
+    {
+        return device_vector_log_loss_vector_float
+    }
+#else
     static inline dtype sigmoid(dtype z)
     {
         return 1 / (1 + std::exp(-z));
@@ -176,6 +208,7 @@ public:
         }
         return -acc / Y.size();
     }
+#endif
 
     void fit(Matrix const& X, Vector const& Y)
     {
@@ -259,7 +292,7 @@ public:
         {
             Z[i] = sigmoid(Z[i] + bias_);
         }
-        return dot_transform();
+        return dot_transform(, _);
     }
  
     Vector predict(Matrix const& X)
