@@ -47,9 +47,9 @@ namespace host
         return 1 / (1 + std::exp(-z));
     };
 
-    constexpr double log_loss = [](auto h, auto y)
+    constexpr auto log_loss = [](auto h, auto y)
     {
-        return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
+        return -((double) y * log(h + 1e-15) + (1 - (double) y) * log(1 - h + 1e-15));
     };
 
     template <typename dtype>
@@ -76,7 +76,7 @@ namespace host
         return -acc / Y.size();
     }
 };
-using namespace host;
+//using namespace host;
 #pragma endregion functions
 
 // Overloading operators for only scalar operations, or simple operations with the same type.

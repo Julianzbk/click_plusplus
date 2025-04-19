@@ -14,10 +14,12 @@ constexpr enum class Device {cpu, cuda};
 
 #ifdef USE_CUDA
     #include "vectors_device.hpp"
+    using namespace device;
     using bf16 = nv_bfloat16;
     constexpr Device DEVICE = Device::cuda;
 #else
     #include "vectors_host.hpp"
+    using namespace host;
     // using bf16 = std::bfloat16_t;
     constexpr Device DEVICE = Device::cpu;
 #endif
@@ -122,12 +124,10 @@ class SGDClassifier
     using Vector = DeviceVector<dtype>;
     using Array = DeviceArray<dtype, M>;
     using Matrix = DeviceMatrix<dtype, M>;
-    using namespace device;
 #else
     using Vector = std::vector<dtype>;
     using Array = std::array<dtype, M>;
     using Matrix = std::vector<std::array<dtype, M>>;
-    using namespace host;
 #endif
 public:
     Array theta_;
@@ -170,11 +170,7 @@ public:
     void fit(Matrix const& X, Vector const& Y)
     {
         assert(X.size() == Y.size());
-        // Zero out the weights
-        for (size_t i = 0; i < M; ++i)
-        {
-            theta_[i] = 0;
-        }
+        theta_.fill(0); // Zero out the weights
         
         Rando random_state(0, X.size());
         double last_losses[2] = {1.0, 1.0};
@@ -187,7 +183,6 @@ public:
             // for (size_t i = 0; i < X.size(); ++i) // Use for loop instead to train on full dataset.
             {
                 Array xi = X[i];
-                xi[0] = 0;
                 dtype yi = Y[i];
                 dtype z = dot(xi, theta_) + bias_;
                 dtype h = sigmoid(z);
