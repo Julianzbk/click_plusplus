@@ -374,7 +374,7 @@ void vector_reduce_step(itype* dest, const dtype* V, size_t N,
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= N)
         return;
-    
+    /*
     extern __shared__ dtype cache[];
 
     unsigned int tid = threadIdx.x;
@@ -398,13 +398,14 @@ void vector_reduce_step(itype* dest, const dtype* V, size_t N,
 
     if (tid == 0)
     {
-        *dest = thunk(cache[0] + bias)
+        *dest = thunk(cache[0] + bias);
     }
+    */
 }
 
 template <typename dtype, typename itype = dtype, class UnaryOp>
-__global__
-itype* vector_reduce(const dtype* V, size_t N,
+__host__
+itype vector_reduce(const dtype* V, size_t N,
                      dtype bias = 0, UnaryOp thunk = device_no_op)
 {
     itype dest = itype(); // single variable output TODO: replace bias with itype acc?
@@ -413,13 +414,16 @@ itype* vector_reduce(const dtype* V, size_t N,
     return dest;
 }
 
-
+/*
 template <typename dtype, typename itype = dtype, class BinaryOp>
 __global__
-itype* vector_double_reduce(const dtype* V, const dtype* U, size_t N,
+itype vector_double_reduce(const dtype* V, const dtype* U, size_t N,
                             itype acc = itype(), BinaryOp thunk = device_no_op)
 {
-    vector_reduce_step<dtype, itype, BinaryOp> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
-        (&acc, X, N, bias, thunk);
+    vector_double_reduce_step<dtype, itype, BinaryOp> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
+        (&acc, V, N, bias, thunk);
     return acc;
 }
+*/
+
+};
