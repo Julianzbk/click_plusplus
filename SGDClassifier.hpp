@@ -167,6 +167,13 @@ public:
         return vector_log_loss_vector(H, Y);
     }
 
+#ifdef USE_CUDA
+    void fit(std::vector<std::array<dtype, M>> const& X,
+             std::vector<dtype> const& Y)
+    {
+        fit(to_device(X), to_device(Y));
+    }
+#endif
     void fit(Matrix const& X, Vector const& Y)
     {
         assert(X.size() == Y.size());
