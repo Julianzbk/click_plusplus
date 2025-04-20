@@ -167,13 +167,6 @@ public:
         return vector_log_loss_vector(H, Y);
     }
 
-#ifdef USE_CUDA
-    void fit(std::vector<std::array<dtype, M>> const& X,
-             std::vector<dtype> const& Y)
-    {
-        fit(to_device(X), to_device(Y));
-    }
-#endif
     void fit(Matrix const& X, Vector const& Y)
     {
         assert(X.size() == Y.size());
@@ -242,8 +235,26 @@ public:
     {
         return dot_transform(theta_, X, bias_, sigmoid);
     }
+
+#ifdef USE_CUDA
+    void fit(std::vector<std::array<dtype, M>> const& X,
+             std::vector<dtype> const& Y)
+    {
+        fit(to_device(X), to_device(Y));
+    }
+    
+    std::vector<dtype> predict_proba(std::vector<std::array<dtype, M>> const& X)
+    {
+        return predict_proba(to_device(X)).to_host();
+    }
+
+    std::vector<dtype> predict(std::vector<std::array<dtype, M>> const& X)
+    {
+        return predict(to_device(X));
+    }
+#endif
  
-    Vector predict(Matrix const& X)
+    std::vector<dtype> predict(Matrix const& X)
     {
     #ifdef USE_CUDA
         std::vector<dtype> proba = predict_proba(X).to_host();
