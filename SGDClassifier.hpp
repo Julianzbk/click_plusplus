@@ -244,7 +244,7 @@ public:
         std::vector<dtype> proba = predict_proba(X);
     #endif
         std::transform(proba.cbegin(), proba.cend(),
-                       proba.begin(), [](dtype p){return p >= 0.5 ? 1 : 0;});
+                       proba.begin(), [](dtype p){return (dtype) (p >= 0.5 ? 1 : 0);});
         return proba;
     }
 };

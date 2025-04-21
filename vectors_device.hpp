@@ -1,6 +1,6 @@
 #pragma once
 
-//#include "vectors.cu"
+#include "vectors.cuh"
 
 #include <iostream>
 #include <concepts>
@@ -135,7 +135,7 @@ std::ostream& operator << (std::ostream& out, DeviceVector<T> V)
     }
     else
     {
-        out << std::format("DeviceVector({})", V.size());
+        out << "DeviceVector(" << V.size() << ")";
     }
     return out;
 }
@@ -189,7 +189,7 @@ public:
 
     std::array<dtype, M> to_host() const
     {
-        std::array<dtype, M> host(size);
+        std::array<dtype, M> host;
         cudaMemcpy(host.data(), buf, M * sizeof(dtype), cudaMemcpyDeviceToHost);
         return host;
     }
@@ -257,6 +257,16 @@ public:
         return size_;
     }
 
+    size_t n_rows() const
+    {
+        return size_;
+    }
+
+    constexpr size_t n_columns() const
+    {
+        return M;
+    }
+
     dtype* data() const
     {
         return buf;
@@ -285,64 +295,41 @@ std::ostream& operator << (std::ostream& out, DeviceMatrix<T, N> const& M)
 }
 
 #pragma region functions
-
-namespace device
+template <typename dtype>
+inline double scalar_log_loss_vector(dtype h, DeviceVector<dtype> const& Y)
 {
-    constexpr auto no_op = [] __device__ (auto x) {return x;};
+    return -0.0;
+    /*
+    device::LogLoser log_loser;
+    log_loser.h = h;
+    return device::vector_reduce<dtype, double, LogLoser>(Y.data(), Y.size(), 0, log_loser);
+    */
+}
 
-    constexpr auto sigmoid = [] __device__ (auto z)
-    {
-        return 1 / (1 + std::exp(-z));
-    };
-
-    constexpr auto log_loss = [] __device__ (auto h, auto y)
-    {
-        return -((double) y * log(h + 1e-15) + (double) (1 - y) * log(1 - h + 1e-15));
-    };
-
-    template <typename dtype>
-    struct LogLoser
-    {
-        dtype h;
-        LogLoser() = default;
-
-        __device__
-        double operator () (dtype h, dtype y)
-        {
-            return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
-        }
-    };
-
-    template <typename dtype>
-    inline double scalar_log_loss_vector(dtype h, DeviceVector<dtype> const& Y)
-    {
-        LogLoser log_loser;
-        log_loser.h = h;
-        return vector_reduce<dtype, double, device::LogLoser>(Y.data(), Y.size(), 0, log_loser);
-    }
-
-    template <typename dtype>
-    inline double vector_log_loss_vector(DeviceVector<dtype> const& H, DeviceVector<dtype> const& Y)
-    {
-        assert(H.size() == Y.size());
-        return vector_double_reduce<dtype, double>(H.data(), Y.data(), Y.size(), 0, log_loss);
-    }
-};
-//using namespace device;
+template <typename dtype>
+inline double vector_log_loss_vector(DeviceVector<dtype> const& H, DeviceVector<dtype> const& Y)
+{
+    return -0.0;
+    /*
+    assert(H.size() == Y.size());
+    return device::vector_double_reduce<dtype, double>(H.data(), Y.data(), Y.size(), 0, device::log_loss);
+    */
+}
 #pragma endregion functions
+
 
 template <typename dtype, size_t M>
 DeviceArray<dtype, M> operator + (DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
 {
     DeviceArray<dtype, M> sum;
-    sum.buf = vector_add_vector<dtype>(V.data(), U.data(), M);
+    sum.buf = device::vector_add_vector<dtype>(V.data(), U.data(), M);
     return sum;
 }
 
 template <typename dtype, size_t M>
 DeviceArray<dtype, M>& operator += (DeviceArray<dtype, M>& V, DeviceArray<dtype, M> const& U)
 {
-    vector_addassign_vector<dtype>(V.data(), U.data(), M);
+    device::vector_addassign_vector<dtype>(V.data(), U.data(), M);
     return V;
 }
 
@@ -350,7 +337,8 @@ template <typename dtype>
 DeviceVector<dtype> operator - (DeviceVector<dtype> const& V, dtype A)
 {
     DeviceVector<dtype> diff;
-    diff.buf = vector_sub_scalar<dtype>(V.data(), A, V.size());
+    diff.size_ = V.size();
+    diff.buf = device::vector_sub_scalar<dtype>(V.data(), A, V.size());
     return diff;
 }
 
@@ -358,14 +346,14 @@ template <typename dtype, size_t M>
 DeviceArray<dtype, M> operator - (DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
 {
     DeviceArray<dtype, M> diff;
-    diff.buf = vector_sub_vector<dtype>(V.data(), U.data(), M);
+    diff.buf = device::vector_sub_vector<dtype>(V.data(), U.data(), M);
     return diff;
 }
 
 template <typename dtype, size_t M>
 DeviceArray<dtype, M>& operator -= (DeviceArray<dtype, M>& V, DeviceArray<dtype, M> const& U)
 {
-    vector_subassign_vector<dtype>(V.data(), U.data(), M);
+    device::vector_subassign_vector<dtype>(V.data(), U.data(), M);
     return V;
 }
 
@@ -374,7 +362,7 @@ DeviceArray<dtype, M> operator * (itype A, DeviceArray<dtype, M> const& V)
 {
     static_assert(!std::is_same_v<itype, DeviceArray<dtype, M>>);
     DeviceArray<dtype, M> U;
-    U.buf = vector_mul_scalar<dtype>(V.data(), A, M);
+    U.buf = device::vector_mul_scalar<dtype>(V.data(), A, M);
     return U;
 }
 
@@ -383,7 +371,7 @@ DeviceArray<dtype, M> operator / (DeviceArray<dtype, M> const& V, itype A)
 {
     static_assert(!std::is_same_v<itype, DeviceArray<dtype, M>>);
     DeviceArray<dtype, M> U;
-    U.buf = vector_div_scalar<dtype>(V.data(), A, M);
+    U.buf = device::vector_div_scalar<dtype>(V.data(), A, M);
     return U;
 }
 
@@ -391,20 +379,20 @@ template <typename dtype>
 inline dtype dot(DeviceVector<dtype> const& V, DeviceVector<dtype> const& U)
 {
     assert(V.size() == U.size());
-    return vector_dot<dtype>(V.data(), U.data(), V.size());
+    return device::vector_dot<dtype>(V.data(), U.data(), V.size());
 }
 
 template <typename dtype, size_t M>
 inline dtype dot(DeviceVector<dtype> const& V, DeviceArray<dtype, M> const& U)
 {
     assert(V.size() == M);
-    return vector_dot<dtype>(V.data(), U.data(), M);
+    return device::vector_dot<dtype>(V.data(), U.data(), M);
 }
 
 template <typename dtype, size_t M>
 inline dtype dot(DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
 {
-    return vector_dot<dtype>(V.data(), U.data(), M);
+    return device::vector_dot<dtype>(V.data(), U.data(), M);
 }
 
 template <typename dtype, size_t M>
@@ -412,17 +400,19 @@ DeviceVector<dtype> dot(DeviceArray<dtype, M> const& T,
                         DeviceMatrix<dtype, M> const& X,
                         dtype bias = 0)
 {
-    DeviceVector<dtype> Y(X.size());
-    Y.buf = vector_dot_matrix<dtype>(T.data(), X.data(), M, X.size(), bias);
+    DeviceVector<dtype> Y;
+    Y.size_ = X.size();
+    Y.buf = device::vector_dot_matrix<dtype>(T.data(), X.data(), M, X.size(), bias);
     return Y;
 }
 
 template <typename dtype, size_t M, class DeviceLambda>
 DeviceVector<dtype> dot_transform(DeviceArray<dtype, M> const& T,
                                   DeviceMatrix<dtype, M> const& X,
-                                  dtype bias = 0, DeviceLambda thunk = device::no_op)
+                                  dtype bias, DeviceLambda thunk)
 {
-    DeviceVector<dtype> Y(X.size());
-    Y.buf = vector_dot_matrix_transform<dtype>(T.data(), X.data(), M, X.size(), bias, thunk);
+    DeviceVector<dtype> Y;
+    Y.size_ = X.size();
+    Y.buf = device::vector_dot_matrix_transform<dtype>(T.data(), X.data(), M, X.size(), bias, thunk);
     return Y;
 }
