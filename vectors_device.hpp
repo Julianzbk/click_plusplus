@@ -77,6 +77,18 @@ public:
         cudaMemcpy(buf, V.data(), V.size() * sizeof(dtype), cudaMemcpyHostToDevice);
     }
 
+    DeviceVector(DeviceVector const& A)
+        :size_(A.size_)
+    {
+        cudaMalloc(&buf, A.size_ * sizeof(dtype));
+        cudaMemcpy(buf, A.buf, A.size_ * sizeof(dtype), cudaMemcpyDeviceToDevice);
+    }
+
+    DeviceVector(DeviceVector && A)
+        :size_(A.size_), buf(A.buf)
+    {
+    }
+
     ~DeviceVector()
     {
         cudaFree(buf);
@@ -101,7 +113,6 @@ public:
 
     dtype operator [] (size_t idx) const
     {// BAD
-        std::cout << "BAD!" << std::endl;
         dtype host;
         cudaMemcpy(&host, &buf[idx], sizeof(dtype), cudaMemcpyDeviceToHost);
         return host;
@@ -148,8 +159,9 @@ public:
     dtype* buf; // Device side
 
     DeviceArray()
-        :buf(nullptr)
+        :buf()
     {
+        cudaMalloc(&buf, M * sizeof(dtype));
     }
 
     DeviceArray(std::initializer_list<dtype> const& A)
@@ -163,6 +175,17 @@ public:
     {
         cudaMalloc(&buf, M * sizeof(dtype));
         cudaMemcpy(buf, A.data(), M * sizeof(dtype), cudaMemcpyHostToDevice);
+    }
+
+    DeviceArray(DeviceArray const& A)
+    {
+        cudaMalloc(&buf, M * sizeof(dtype));
+        cudaMemcpy(buf, A.buf, M * sizeof(dtype), cudaMemcpyDeviceToDevice);
+    }
+
+    DeviceArray(DeviceArray && A)
+        :buf(A.buf)
+    {
     }
 
     ~DeviceArray()
@@ -298,22 +321,16 @@ std::ostream& operator << (std::ostream& out, DeviceMatrix<T, N> const& M)
 template <typename dtype>
 inline double scalar_log_loss_vector(dtype h, DeviceVector<dtype> const& Y)
 {
-    return -0.0;
-    /*
-    device::LogLoser log_loser;
+    device::LogLoser<dtype> log_loser;
     log_loser.h = h;
-    return device::vector_reduce<dtype, double, LogLoser>(Y.data(), Y.size(), 0, log_loser);
-    */
+    return device::vector_reduce<dtype, double, device::LogLoser<dtype>>(Y.data(), Y.size(), 0, log_loser);
 }
 
 template <typename dtype>
 inline double vector_log_loss_vector(DeviceVector<dtype> const& H, DeviceVector<dtype> const& Y)
 {
-    return -0.0;
-    /*
     assert(H.size() == Y.size());
     return device::vector_double_reduce<dtype, double>(H.data(), Y.data(), Y.size(), 0, device::log_loss);
-    */
 }
 #pragma endregion functions
 

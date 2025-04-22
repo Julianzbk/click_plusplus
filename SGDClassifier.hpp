@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <iomanip>
 #include <format>
 #include <cmath>
 #include <numeric>
@@ -8,8 +9,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cassert>
+#include <fstream>
 
-constexpr enum class Device {cpu, cuda};
+enum class Device {cpu, cuda};
 // for control flow with if constexpr
 
 #ifdef USE_CUDA
@@ -17,12 +19,47 @@ constexpr enum class Device {cpu, cuda};
     using namespace device;
     using bf16 = nv_bfloat16;
     constexpr Device DEVICE = Device::cuda;
+    
 #else
     #include "vectors_host.hpp"
     using namespace host;
     // using bf16 = std::bfloat16_t;
     constexpr Device DEVICE = Device::cpu;
 #endif
+
+#pragma region containers
+#include <array>
+template <typename T, size_t N>
+std::ostream& operator << (std::ostream& out, std::array<T, N> const& v)
+{
+    static_assert(N > 0);
+    out << '[';
+    size_t i = 0;
+    for (; i < N - 1; ++i)
+    {
+        out << v[i] << ", ";
+    }
+    out << v[N - 1];
+    out << ']';
+    return out;
+}
+
+#include <vector>
+template <typename T>
+std::ostream& operator << (std::ostream& out, std::vector<T> v)
+{
+    out << '[';
+    int i = 0;
+    int size = v.size();
+    for (; i < size - 1; ++i)
+    {
+        out << v[i] << ", ";
+    }
+    out << v[size - 1];
+    out << ']';
+    return out;
+}
+#pragma endregion containers
 
 
 #pragma region utility
@@ -87,8 +124,10 @@ struct ConfusionMatrix
     friend std::ostream& operator << (std::ostream& out, ConfusionMatrix M)
     {
         out << "ConfusionMatrix:\n";
+        /*
         out << std::format("| {}\t{:<4}|\n", M.true_negative, M.false_positive);
         out << std::format("| {}\t{:<4}|", M.false_negative, M.true_positive) << std::endl;
+        */
         return out;
     }
 };
@@ -111,6 +150,34 @@ ConfusionMatrix confusion_matrix(std::vector<dtype> const& pred,
             ++conf.true_positive;
     }
     return conf;
+}
+
+constexpr uint64_t FILE_MAGIC = 0x44454647452D4344;
+
+template <typename T>
+inline void dumps(std::ostream& out, T data)
+{
+    out.write(reinterpret_cast<const char*>(&data), sizeof(data));
+}
+
+template <typename T>
+inline void dumps(std::ostream& out, const T& data, size_t n_bytes)
+{
+    out.write(reinterpret_cast<const char*>(&data), n_bytes);
+}
+
+template <typename read_T>
+inline read_T loads(std::istream& in)
+{
+    read_T data;
+    in.read(reinterpret_cast<char*>(&data), sizeof(read_T));
+    return data;
+}
+
+template <typename read_T>
+inline void loads(std::istream& in, read_T* dest,size_t n_bytes)
+{
+    in.read(reinterpret_cast<read_T>(dest), n_bytes);
 }
 #pragma endregion utility
 
@@ -169,6 +236,19 @@ public:
 
     void fit(Matrix const& X, Vector const& Y)
     {
+    /*
+        Required Interfaces:
+            All math operators of dtype
+            Array::fill
+            Array Matrix::operator[]
+            dtype Array:operator[]
+            dtype Vector:operator[]
+            dtype dot(Array, Array)
+            sigmoid(dtype)
+            dtype * Array
+            Array + Array
+            Array -= Array
+    */
         assert(X.size() == Y.size());
         theta_.fill(0); // Zero out the weights
         
@@ -179,7 +259,6 @@ public:
         for (; epoch <= max_epochs; ++epoch)
         {
             size_t i = random_state.generate(); // Stoichastic = choose random datapoint from X.
-            // std::cout << "i = " << i << "\n";
             // for (size_t i = 0; i < X.size(); ++i) // Use for loop instead to train on full dataset.
             {
                 Array xi = X[i];
@@ -189,6 +268,8 @@ public:
                 dtype error = h - yi;
                 Array grad = error * xi; // scalar mult with an array here.
                 Array penalty = lambda * theta_;
+                
+                //cout << "theta_: " << theta_.to_host() << " bias_: " << bias_ << "\nxi: " << xi.to_host() << endl;
                 theta_ -= lr * (grad + penalty); // another scalar mult.
                 bias_ -= lr * error;
             }
@@ -199,7 +280,7 @@ public:
                 loss = this->loss(Z, Y);
                 
                 if (PRINT_LOSS_EVERY > 0 && epoch % PRINT_LOSS_EVERY == 0)
-                    std::cout << std::format("Epoch {}: Loss = {:.10f}\n", epoch, loss);
+                    std::cout << "Epoch " << epoch << ": Loss = " << std::setprecision(10) << loss << "\n";
 
                 if (early_stop &&
                     float_approx(last_losses[0], loss, CONVERGED_THRESH) &&
@@ -213,7 +294,7 @@ public:
                 last_losses[0] = loss;
             }
         }   
-        std::cout << std::format("Training has ended after {} Epochs with Loss = {:.10f}.", epoch - 1, loss) << std::endl;
+        std::cout << "Training has ended after " << epoch - 1 << " Epochs with Loss = " << std::setprecision(10) << loss << std::endl;
     }
 
     void partial_fit(Array const& x, dtype const& y)
@@ -227,7 +308,7 @@ public:
             
         if (PRINT_LOSS_EVERY > 0)
         {
-            std::cout << std::format("Partial-fit: Loss = {:.5f}\n", loss(h, y));
+            std::cout << "Partial-fit: Loss = " << std::setprecision(5)  << loss(h, y) << "\n";
         }
     }
 
@@ -264,6 +345,41 @@ public:
         std::transform(proba.cbegin(), proba.cend(),
                        proba.begin(), [](dtype p){return (dtype) (p >= 0.5 ? 1 : 0);});
         return proba;
+    }
+
+    void export_file(std::string const& path)
+    {
+        std::ofstream fout(path, std::ios::binary);
+        if (!fout)
+            throw std::runtime_error("Bad file read");
+        dumps(fout, FILE_MAGIC);
+        size_t n_bytes = theta_.size() * sizeof(dtype);
+        dumps(fout, n_bytes);
+        #ifdef USE_CUDA
+            dumps(fout, theta_.to_host().data(), n_bytes);
+        #else
+            dumps(fout, theta_.data(), n_bytes);
+        #endif
+        dumps(fout, bias_);
+    }
+
+    static SGDClassifier import_file(std::string const& path)
+    {
+        std::ifstream fin(path, std::ios::binary);
+        if (loads<uint64_t>(fin) != FILE_MAGIC)
+            throw std::runtime_error("Bad file read, not formatted correctly");
+        size_t n_bytes = loads<size_t>(fin);
+        assert(M == (n_bytes / sizeof(dtype)));
+        std::array<dtype, M> theta_;
+        loads(fin, theta_.data(), n_bytes);
+        SGDClassifier model;
+        #ifdef USE_CUDA
+            model.theta_ = to_device(theta_);   
+        #else
+            model.theta_ = theta_;
+        #endif
+        model.bias_ = loads<dtype>(fin);
+        return model;
     }
 };
 

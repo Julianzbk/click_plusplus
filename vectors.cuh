@@ -95,7 +95,7 @@ __global__
 void vector_sub_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    dest[i] += (i < N) ? V[i] - A : dtype();
+    dest[i] = (i < N) ? V[i] - A : dtype();
 }
 
 template <class dtype>
@@ -119,7 +119,7 @@ __global__
 void vector_mul_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    dest[i] += (i < N) ? V[i] * A : dtype();
+    dest[i] = (i < N) ? V[i] * A : dtype();
 }
 
 template <class dtype>
@@ -127,7 +127,7 @@ __global__
 void vector_div_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    dest[i] += (i < N) ? V[i] / A : dtype();
+    dest[i] = (i < N) ? V[i] / A : dtype();
 }
 
 template <typename dtype>
@@ -404,7 +404,7 @@ dtype* vector_transform(const dtype* X, size_t N, dtype bias, UnaryOp thunk)
 {
     dtype* dest;
     cudaMalloc(&dest, N * sizeof(dtype));
-    vector_dot_matrix_transform_step<dtype> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
+    vector_transform_step<dtype> <<<N, threads_per_block, threads_per_block * sizeof(dtype)>>>
         (dest, X, N, bias, thunk);
     return dest;
 }
@@ -450,15 +450,25 @@ itype vector_double_reduce(const dtype* V, const dtype* U, size_t N,
     return acc;
 }
 
-constexpr auto sigmoid = [] __device__ (auto z)
+struct Sigmoid
 {
-    return 1 / (1 + std::exp(-z));
-};
+    template <typename dtype>
+    __host__ __device__
+    dtype operator () (dtype z) const
+    {
+        return 1 / (1 + std::exp(-z));
+    }
+} sigmoid;
 
-constexpr auto log_loss = [] __device__ (auto h, auto y)
+struct LogLoss
 {
-    return -((double) y * log(h + 1e-15) + (double) (1 - y) * log(1 - h + 1e-15));
-};
+    template <typename dtype>
+    __host__ __device__
+    double operator () (dtype h, dtype y) const
+    {
+        return -((double) y * log(h + 1e-15) + (double) (1 - y) * log(1 - h + 1e-15));
+    }
+} log_loss;
 
 template <typename dtype>
 struct LogLoser
@@ -466,20 +476,16 @@ struct LogLoser
     dtype h;
     LogLoser() = default;
     
-    double operator () (dtype y) const;
-    double operator () (dtype h, dtype y) const;
+    __host__ __device__
+    double operator () (dtype y) const
+    {
+        return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
+    }
+
+    __host__ __device__
+    double operator () (dtype h, dtype y) const
+    {
+        return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
+    }
 };
-
-template <typename dtype>
-__device__ double LogLoser<dtype>::operator() (dtype y) const
-{
-    return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
-}
-
-template <typename dtype>
-__device__ double LogLoser<dtype>::operator() (dtype h, dtype y) const
-{
-    return -(y * log(h + 1e-15) + (1 - y) * log(1 - h + 1e-15));
-}
-
 };

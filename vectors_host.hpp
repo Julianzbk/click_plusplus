@@ -3,39 +3,7 @@
 #include <iostream>
 #include <concepts>
 
-#pragma region containers
-#include <array>
-template <typename T, size_t N>
-std::ostream& operator << (std::ostream& out, std::array<T, N> const& v)
-{
-    static_assert(N > 0);
-    out << '[';
-    size_t i = 0;
-    for (; i < N - 1; ++i)
-    {
-        out << v[i] << ", ";
-    }
-    out << v[N - 1];
-    out << ']';
-    return out;
-}
 
-#include <vector>
-template <typename T>
-std::ostream& operator << (std::ostream& out, std::vector<T> v)
-{
-    out << '[';
-    int i = 0;
-    int size = v.size();
-    for (; i < size - 1; ++i)
-    {
-        out << v[i] << ", ";
-    }
-    out << v[size - 1];
-    out << ']';
-    return out;
-}
-#pragma endregion containers
 
 #pragma region functions
 namespace host
@@ -219,7 +187,7 @@ std::vector<dtype> dot(std::array<dtype, M> const& T,
 template <typename dtype, size_t M, class UnaryOp>
 std::vector<dtype> dot_transform(std::array<dtype, M> const& T,
                                  std::vector<std::array<dtype, M>> const& X,
-                                 dtype bias = 0, UnaryOp thunk = no_op)
+                                 dtype bias = 0, UnaryOp thunk = host::no_op)
 {
     size_t N = X.size();
     std::vector<dtype> Y(N);
