@@ -3,7 +3,39 @@
 #include <iostream>
 #include <concepts>
 
+#pragma region containers
+#include <array>
+template <typename T, size_t N>
+std::ostream& operator << (std::ostream& out, std::array<T, N> const& v)
+{
+    static_assert(N > 0);
+    out << '[';
+    size_t i = 0;
+    for (; i < N - 1; ++i)
+    {
+        out << v[i] << ", ";
+    }
+    out << v[N - 1];
+    out << ']';
+    return out;
+}
 
+#include <vector>
+template <typename T>
+std::ostream& operator << (std::ostream& out, std::vector<T> v)
+{
+    out << '[';
+    int i = 0;
+    int size = v.size();
+    for (; i < size - 1; ++i)
+    {
+        out << v[i] << ", ";
+    }
+    out << v[size - 1];
+    out << ']';
+    return out;
+}
+#pragma endregion containers
 
 #pragma region functions
 namespace host

@@ -27,41 +27,6 @@ enum class Device {cpu, cuda};
     constexpr Device DEVICE = Device::cpu;
 #endif
 
-#pragma region containers
-#include <array>
-template <typename T, size_t N>
-std::ostream& operator << (std::ostream& out, std::array<T, N> const& v)
-{
-    static_assert(N > 0);
-    out << '[';
-    size_t i = 0;
-    for (; i < N - 1; ++i)
-    {
-        out << v[i] << ", ";
-    }
-    out << v[N - 1];
-    out << ']';
-    return out;
-}
-
-#include <vector>
-template <typename T>
-std::ostream& operator << (std::ostream& out, std::vector<T> v)
-{
-    out << '[';
-    int i = 0;
-    int size = v.size();
-    for (; i < size - 1; ++i)
-    {
-        out << v[i] << ", ";
-    }
-    out << v[size - 1];
-    out << ']';
-    return out;
-}
-#pragma endregion containers
-
-
 #pragma region utility
 inline bool float_approx(double a, double b, double epsilon = 1e-9)
 {
@@ -124,10 +89,8 @@ struct ConfusionMatrix
     friend std::ostream& operator << (std::ostream& out, ConfusionMatrix M)
     {
         out << "ConfusionMatrix:\n";
-        /*
-        out << std::format("| {}\t{:<4}|\n", M.true_negative, M.false_positive);
-        out << std::format("| {}\t{:<4}|", M.false_negative, M.true_positive) << std::endl;
-        */
+        out << "| " << M.true_negative << "\t" << std::setw(4) << std::right << M.false_positive << "\n";
+        out << "| " << M.false_negative << "\t" << std::setw(4) << std::right << M.true_positive << "\n";
         return out;
     }
 };
@@ -333,6 +296,22 @@ public:
     {
         return predict(to_device(X));
     }
+
+    struct ThresholdFunctor
+    {
+        __device__
+        dtype operator () (dtype p) const
+        {
+            return (p >= 0.5) ? 1 : 0;
+        }
+    } thresh_functor;
+
+    DeviceVector<dtype> predict_device(Matrix const& X)
+    {
+        DeviceVector pred = predict_proba(X);
+        vector_inplace_transform<dtype, ThresholdFunctor>(pred.data(), pred.size(), 0, thresh_functor);
+        return pred;
+    } 
 #endif
  
     std::vector<dtype> predict(Matrix const& X)

@@ -7,6 +7,7 @@
 #include <cassert>
 #include <initializer_list>
 #include <compare>
+#include <functional>
 
 #include <array>
 #include <vector>
@@ -87,6 +88,14 @@ public:
     DeviceVector(DeviceVector && A)
         :size_(A.size_), buf(A.buf)
     {
+    }
+
+    static DeviceVector get_empty(size_t size)
+    {// Factory function to prevent misuse
+        DeviceVector<dtype> V;
+        V.size_ = size;
+        cudaMalloc(&V.buf, size * sizeof(dtype));
+        return V;
     }
 
     ~DeviceVector()
@@ -270,6 +279,30 @@ public:
         }
     }
 
+    DeviceMatrix(DeviceMatrix const& A)
+    {
+        cudaMalloc(&buf, A.size_ * M * sizeof(dtype));
+        cudaMemcpy(buf, A.buf, A.size_ * M * sizeof(dtype), cudaMemcpyDeviceToDevice);
+    }
+
+    DeviceMatrix(DeviceMatrix && A)
+        :size_(A.size_), buf(A.buf)
+    {
+    }
+private:
+    DeviceMatrix()
+        :size_(0), buf(nullptr)
+    {
+    }
+public:
+    static DeviceMatrix<dtype, M> get_empty(size_t size)
+    {// Factory function to prevent misuse
+        DeviceMatrix<dtype, M> A;
+        A.size_ = size;
+        cudaMalloc(&A.buf, size * M * sizeof(dtype));
+        return A;
+    }
+
     ~DeviceMatrix()
     {
         cudaFree(buf);
@@ -432,4 +465,23 @@ DeviceVector<dtype> dot_transform(DeviceArray<dtype, M> const& T,
     Y.size_ = X.size();
     Y.buf = device::vector_dot_matrix_transform<dtype>(T.data(), X.data(), M, X.size(), bias, thunk);
     return Y;
+}
+
+template <typename dtype>
+struct ErrorFunctor
+{
+    __device__
+    size_t operator () (dtype pred, dtype Y) const
+    {
+        return (pred != Y) ? 1 : 0;
+    }
+};
+
+template <typename dtype>
+double error(DeviceVector<dtype> const& pred,
+             DeviceVector<dtype> const& Y)
+{
+    
+    size_t n_wrong = device::vector_double_reduce(pred.data(), Y.data(), pred.size(), 0ULL, ErrorFunctor<dtype>());
+    return n_wrong / pred.size();
 }
