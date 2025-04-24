@@ -62,16 +62,18 @@ struct LogLoser
 };
 #pragma endregion functions
 
+extern __shared__ unsigned char shared_cache[];
+
 template <typename dtype = float>
 __global__
 void vector_dot_step(const dtype* A, const dtype* B, dtype* partial, size_t N)
 {
-    extern __shared__ dtype vector_dot_cache[];
-
+    dtype* cache = reinterpret_cast<dtype*>(shared_cache);
+    
     unsigned int tid = threadIdx.x;
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    vector_dot_cache[tid] = (i < N) ? A[i] * B[i] : dtype(); // operation step
+    cache[tid] = (i < N) ? A[i] * B[i] : dtype(); // operation step
     __syncthreads();
     
     //printf("hi from idx");
@@ -79,14 +81,14 @@ void vector_dot_step(const dtype* A, const dtype* B, dtype* partial, size_t N)
     {
         if (tid < s)
         {
-            vector_dot_cache[tid] += vector_dot_cache[tid + s];
+            cache[tid] += cache[tid + s];
         }
         __syncthreads();
     }
 
     if (tid == 0)
     {   
-        partial[blockIdx.x] = vector_dot_cache[0];
+        partial[blockIdx.x] = cache[0];
     }
 }
 
@@ -188,9 +190,9 @@ void vector_dot_matrix_step(dtype* dest, const dtype* T, const dtype* X, size_t 
     unsigned int row = blockIdx.x;
     if (row >= N)
         return;
-    
-    extern __shared__ dtype vector_dot_matrix_cache[];
 
+    dtype* cache = reinterpret_cast<dtype*>(shared_cache);
+    
     unsigned int tid = threadIdx.x;
     const dtype* row_ptr = X + row * M;
     dtype partial = 0;
@@ -198,21 +200,21 @@ void vector_dot_matrix_step(dtype* dest, const dtype* T, const dtype* X, size_t 
     {
         partial += T[j] * row_ptr[j];
     }
-    vector_dot_matrix_cache[tid] = partial;
+    cache[tid] = partial;
     __syncthreads();
 
     for (int s = blockDim.x / 2; s > 0; s >>= 1)
     {
         if (tid < s)
         {
-            vector_dot_matrix_cache[tid] += vector_dot_matrix_cache[tid + s];
+            cache[tid] += cache[tid + s];
         }
         __syncthreads();
     }
 
     if (tid == 0)
     {
-        dest[row] = vector_dot_matrix_cache[0] + bias;
+        dest[row] = cache[0] + bias;
     }
 }
 
@@ -244,7 +246,7 @@ void vector_dot_matrix_transform_step(dtype* dest, const dtype* T, const dtype* 
     if (row >= N)
         return;
     
-    extern __shared__ dtype vector_dot_matrix_transform_cache[];
+    dtype* cache = reinterpret_cast<dtype*>(shared_cache);
 
     unsigned int tid = threadIdx.x;
     const dtype* row_ptr = X + row * M;
@@ -253,21 +255,21 @@ void vector_dot_matrix_transform_step(dtype* dest, const dtype* T, const dtype* 
     {
         partial += T[j] * row_ptr[j];
     }
-    vector_dot_matrix_transform_cache[tid] = partial;
+    cache[tid] = partial;
     __syncthreads();
 
     for (int s = blockDim.x / 2; s > 0; s >>= 1)
     {
         if (tid < s)
         {
-            vector_dot_matrix_transform_cache[tid] += vector_dot_matrix_transform_cache[tid + s];
+            cache[tid] += cache[tid + s];
         }
         __syncthreads();
     }
 
     if (tid == 0)
     {
-        dest[row] = thunk(vector_dot_matrix_transform_cache[0] + bias); // Applies the transform operation
+        dest[row] = thunk(cache[0] + bias); // Applies the transform operation
     }
 }
 
@@ -454,9 +456,9 @@ void vector_reduce_step(itype* block_sums, const dtype* V, size_t N, UnaryOp thu
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= N)
         return;
-    
-    extern __shared__ itype vector_reduce_cache[];
 
+    itype* cache = reinterpret_cast<itype*>(shared_cache);
+    
     unsigned int tid = threadIdx.x;
     unsigned int idx = blockIdx.x * blockDim.x * 2 + tid;
 
@@ -469,32 +471,30 @@ void vector_reduce_step(itype* block_sums, const dtype* V, size_t N, UnaryOp thu
     {
         acc += thunk(V[idx + blockDim.x]);
     }
-    vector_reduce_cache[tid] = acc;
+    cache[tid] = acc;
     __syncthreads();
 
     for (int s = blockDim.x / 2; s > 32; s >>= 1)
     {
         if (tid < s)
         {
-            vector_reduce_cache[tid] += vector_reduce_cache[tid + s];
+            cache[tid] += cache[tid + s];
         }
         __syncthreads();
     }
     
     if (tid < 32)
     {
-        volatile itype* vsmem = vector_reduce_cache;
-        vsmem[tid] += vsmem[tid + 32]; // replace w/ atomicAdd
-        vsmem[tid] += vsmem[tid + 16];
-        vsmem[tid] += vsmem[tid + 8];
-        vsmem[tid] += vsmem[tid + 4];
-        vsmem[tid] += vsmem[tid + 2];
-        vsmem[tid] += vsmem[tid + 1];
+        #pragma unroll
+        for (int s = 16; s > 0; s >>= 1)
+        {
+            cache[tid] += __shfl_down_sync(0xffffffff, cache[tid], s);
+        }
     }
 
     if (tid == 0)
     {
-        block_sums[blockIdx.x] = vector_reduce_cache[0];
+        block_sums[blockIdx.x] = cache[0];
     }
 }
 
@@ -525,9 +525,9 @@ void vector_double_reduce_step(itype* block_sums, const dtype* V, const dtype* U
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= N)
         return;
-    
-    extern __shared__ itype vector_reduce_cache[];
 
+    itype* cache = reinterpret_cast<itype*>(shared_cache);
+    
     unsigned int tid = threadIdx.x;
     unsigned int idx = blockIdx.x * blockDim.x * 2 + tid;
 
@@ -540,32 +540,30 @@ void vector_double_reduce_step(itype* block_sums, const dtype* V, const dtype* U
     {
         acc += thunk(V[idx + blockDim.x], U[idx + blockDim.x]);
     }
-    vector_reduce_cache[tid] = acc;
+    cache[tid] = acc;
     __syncthreads();
 
     for (int s = blockDim.x / 2; s > 32; s >>= 1)
     {
         if (tid < s)
         {
-            vector_reduce_cache[tid] += vector_reduce_cache[tid + s];
+            cache[tid] += cache[tid + s];
         }
         __syncthreads();
     }
     
     if (tid < 32)
     {
-        volatile itype* vsmem = vector_reduce_cache;
-        vsmem[tid] += vsmem[tid + 32];
-        vsmem[tid] += vsmem[tid + 16];
-        vsmem[tid] += vsmem[tid + 8];
-        vsmem[tid] += vsmem[tid + 4];
-        vsmem[tid] += vsmem[tid + 2];
-        vsmem[tid] += vsmem[tid + 1];
+        #pragma unroll
+        for (int s = 16; s > 0; s >>= 1)
+        {
+            cache[tid] += __shfl_down_sync(0xffffffff, cache[tid], s);
+        }
     }
 
     if (tid == 0)
     {
-        block_sums[blockIdx.x] = vector_reduce_cache[0];
+        block_sums[blockIdx.x] = cache[0];
     }
 }
 
@@ -632,24 +630,54 @@ __global__
 void welford_step(const dtype* A, size_t M, size_t N,
                   double* means, double* vars)
 {
-    extern __shared__ WelfordState welford_cache[];
+    WelfordState* cache = reinterpret_cast<WelfordState*>(shared_cache);
     unsigned int col = blockIdx.x;
     if (col >= M)
         return;
     WelfordState local_state;
-    for (int i = threadIdx.x; i < N; i += blockDim.x)
+    unsigned int tid = threadIdx.x;
+    for (unsigned int i = tid; i < N; i += blockDim.x)
     {
-        dtype x = A[i * M + col];
-        local_state = welford_acc(local_state, x);
+        size_t idx = size_t(i) * M + size_t(col);
+        if (idx >= M * N)
+        {
+            assert(false);
+            printf("DEBUG: data=%p rows=%llu cols=%llu maxIdx=%llu, idx=%llu\n",
+               A, N, M, M * N, idx);
+        }
+        dtype x = A[idx];
+        local_state = welford_acc(local_state, 0);
     }
-    welford_cache[threadIdx.x] = local_state;
+    cache[tid] = local_state;
     __syncthreads();
-    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            welford_cache[threadIdx.x] = welford_merge(welford_cache[threadIdx.x], welford_cache[threadIdx.x + s]);
+    for (int s = blockDim.x / 2; s > 0; s >>= 1)
+    {
+        if (tid < s)
+        {
+            cache[tid] = welford_merge(cache[tid], cache[tid + s]);
         }
         __syncthreads();
     }
+
+    if (tid == 0)
+    {
+        WelfordState tot = cache[0];
+        means[col] = tot.mean;
+        vars[col] = (tot.count > 1) ? tot.m_sq / (tot.count - 1) : 0;
+    }
+}
+
+template <typename dtype>
+__device__
+void check_matrix(const dtype* A, size_t M, size_t N)
+{
+    dtype nigger;
+    assert(M * N == 2200000);
+    for (size_t i = 0; i < M * N; ++i)
+    {
+        nigger = A[i];
+    }
+    nigger = A[M * N];
 }
 
 template <typename dtype, size_t M>
@@ -657,6 +685,8 @@ __host__
 void welford(const dtype* A, size_t N, 
              std::array<dtype, M>& means, std::array<dtype, M>& vars)
 {
+    check_matrix(A, M, N);
+    return;
     size_t row_n_bytes = M * sizeof(dtype);
     double* d_means, *d_vars;
     cudaMalloc(&d_means, row_n_bytes);
@@ -664,6 +694,7 @@ void welford(const dtype* A, size_t N,
 
     welford_step<dtype> <<<M, threads_per_block, threads_per_block * sizeof(WelfordState)>>>
         (A, M, N, d_means, d_vars);
+    cudaDeviceSynchronize();
 
     cudaMemcpy(means.data(), d_means, row_n_bytes, cudaMemcpyDeviceToHost);
     cudaMemcpy(vars.data(), d_vars, row_n_bytes, cudaMemcpyDeviceToHost);

@@ -226,11 +226,18 @@ public:
         return host;
     }
 
+    __host__
     dtype operator [] (size_t idx) const
     {// BAD
         dtype host;
         cudaMemcpy(&host, &buf[idx], sizeof(dtype), cudaMemcpyDeviceToHost);
         return host;
+    }
+
+    __device__
+    dtype& operator [] (size_t idx)
+    {
+        return buf[idx];
     }
 };
 

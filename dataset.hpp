@@ -287,12 +287,12 @@ public:
     class TransformerFunctor
     {// Device functors have to be placed outside of __host__ functions to be visible.
     public:
-        DeviceArray<dtype, M> mean;
-        DeviceArray<dtype, M> std;
+        dtype* mean;
+        dtype* std;
 
         TransformerFunctor(std::array<dtype, M> const& mean,
                             std::array<dtype, M> const& std)
-            :mean(to_device(mean)), std(to_device(std))
+            :mean(to_device(mean).data()), std(to_device(std).data())
         {
         }
 
