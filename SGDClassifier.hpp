@@ -154,10 +154,12 @@ class SGDClassifier
     using Vector = DeviceVector<dtype>;
     using Array = DeviceArray<dtype, M>;
     using Matrix = DeviceMatrix<dtype, M>;
+    using RowView = typename DeviceMatrix<dtype, M>::RowView;
 #else
     using Vector = std::vector<dtype>;
     using Array = std::array<dtype, M>;
     using Matrix = std::vector<std::array<dtype, M>>;
+    using RowView = std::array<dtype, M>;
 #endif
 public:
     Array theta_;
@@ -224,7 +226,7 @@ public:
             size_t i = random_state.generate(); // Stoichastic = choose random datapoint from X.
             // for (size_t i = 0; i < X.size(); ++i) // Use for loop instead to train on full dataset.
             {
-                Array xi = X[i];
+                RowView xi = X[i];
                 dtype yi = Y[i];
                 dtype z = dot(xi, theta_) + bias_;
                 dtype h = sigmoid(z);

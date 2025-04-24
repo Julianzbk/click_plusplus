@@ -132,7 +132,8 @@ __global__
 void vector_add_vector_step(dtype* dest, const dtype* V, const dtype* U, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    dest[i] = (i < N) ? V[i] + U[i] : dtype(); // operation step
+    if (i < N)
+        dest[i] = V[i] + U[i];
 }
 
 template <class dtype>
@@ -140,7 +141,8 @@ __global__
 void vector_addassign_vector_step(dtype* V, const dtype* U, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    V[i] += (i < N) ? U[i] : dtype();
+    if (i < N)
+        V[i] += U[i];
 }
 
 template <class dtype>
@@ -148,7 +150,8 @@ __global__
 void vector_sub_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    dest[i] = (i < N) ? V[i] - A : dtype();
+    if (i < N)
+        dest[i] = V[i] - A;
 }
 
 template <class dtype>
@@ -156,7 +159,8 @@ __global__
 void vector_sub_vector_step(dtype* dest, const dtype* V, const dtype* U, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    dest[i] = (i < N) ? V[i] - U[i] : dtype(); // operation step
+    if (i < N)
+        dest[i] = V[i] - U[i];
 }
 
 template <class dtype>
@@ -164,7 +168,8 @@ __global__
 void vector_subassign_vector_step(dtype* V, const dtype* U, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    V[i] -= (i < N) ? U[i] : dtype();
+    if (i < N)
+        V[i] -= U[i];
 }
 
 template <class dtype>
@@ -172,7 +177,8 @@ __global__
 void vector_mul_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    dest[i] = (i < N) ? V[i] * A : dtype();
+    if (i < N)
+        dest[i] = V[i] * A;
 }
 
 template <class dtype>
@@ -180,7 +186,8 @@ __global__
 void vector_div_scalar_step(dtype* dest, const dtype* V, dtype A, size_t N)
 {
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    dest[i] = (i < N) ? V[i] / A : dtype();
+    if (i < N)
+        dest[i] = V[i] / A;
 }
 
 template <typename dtype>
@@ -373,7 +380,7 @@ __host__
 dtype* vector_mul_scalar(const dtype* V, dtype A, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
-
+        
     dtype* dest;
     cudaMalloc(&dest, N * sizeof(dtype));
 
@@ -575,7 +582,7 @@ itype vector_double_reduce(const dtype* V, const dtype* U, size_t N,
     unsigned int n_blocks = (N + threads_per_block * 2 - 1) / (threads_per_block * 2);
     itype* block_sums;
     cudaMalloc(&block_sums, n_blocks * sizeof(itype));
-    vector_double_reduce_step<dtype, itype, BinaryOp> <<<n_blocks, threads_per_block, threads_per_block * sizeof(dtype)>>>
+    vector_double_reduce_step<dtype, itype, BinaryOp> <<<n_blocks, threads_per_block, threads_per_block * sizeof(itype)>>>
         (block_sums, V, U, N, thunk);
     
     unsigned int n_blocks_2 = (n_blocks + threads_per_block * 2 - 1) / (threads_per_block * 2);
@@ -587,39 +594,42 @@ itype vector_double_reduce(const dtype* V, const dtype* U, size_t N,
     return acc + sum;
 }
 
+template <typename dtype>
 struct WelfordState
 {
-    double mean;
-    double m_sq;
+    dtype mean;
+    dtype m_sq;
     size_t count;
 
     __host__ __device__
     WelfordState()
-        :mean(0.0), m_sq(0.0), count(0)
+        :mean(0.0), m_sq(0.0), count(0ULL)
     {
     }
 };
 
+template <typename dtype>
 __device__
-WelfordState welford_acc(WelfordState state, double x)
+WelfordState<dtype> welford_acc(WelfordState<dtype> state, dtype x)
 {
     state.count++;
-    double delta = x - state.mean;
-    state.mean += x / state.count;
+    dtype delta = x - state.mean;
+    state.mean += delta / state.count;
     state.m_sq += delta * (x - state.mean);
     return state;
 }
 
+template <typename dtype>
 __device__
-WelfordState welford_merge(WelfordState const& lhs, WelfordState const& rhs)
+WelfordState<dtype> welford_merge(WelfordState<dtype> const& lhs, WelfordState<dtype> const& rhs)
 {
     if (lhs.count == 0)
         return rhs;
     if (rhs.count == 0)
         return lhs;
-    WelfordState out;
+    WelfordState<dtype> out;
     out.count = lhs.count + rhs.count;
-    double delta = rhs.mean - lhs.mean;
+    dtype delta = rhs.mean - lhs.mean;
     out.mean = lhs.mean + delta * ((double) rhs.count / out.count); // pulls the mean from left to center
     out.m_sq = lhs.m_sq + rhs.m_sq + delta * delta * ((double) lhs.count * rhs.count / out.count);
     return out;
@@ -628,13 +638,13 @@ WelfordState welford_merge(WelfordState const& lhs, WelfordState const& rhs)
 template <typename dtype>
 __global__
 void welford_step(const dtype* A, size_t M, size_t N,
-                  double* means, double* vars)
+                  dtype* means, dtype* stds)
 {
-    WelfordState* cache = reinterpret_cast<WelfordState*>(shared_cache);
+    WelfordState<dtype>* cache = reinterpret_cast<WelfordState<dtype>*>(shared_cache);
     unsigned int col = blockIdx.x;
     if (col >= M)
         return;
-    WelfordState local_state;
+    WelfordState<dtype> local_state;
     unsigned int tid = threadIdx.x;
     for (unsigned int i = tid; i < N; i += blockDim.x)
     {
@@ -646,7 +656,7 @@ void welford_step(const dtype* A, size_t M, size_t N,
                A, N, M, M * N, idx);
         }
         dtype x = A[idx];
-        local_state = welford_acc(local_state, 0);
+        local_state = welford_acc(local_state, x);
     }
     cache[tid] = local_state;
     __syncthreads();
@@ -661,44 +671,30 @@ void welford_step(const dtype* A, size_t M, size_t N,
 
     if (tid == 0)
     {
-        WelfordState tot = cache[0];
+        //printf("DEBUG: col=%lu\n", col);
+        WelfordState<dtype> tot = cache[0];
         means[col] = tot.mean;
-        vars[col] = (tot.count > 1) ? tot.m_sq / (tot.count - 1) : 0;
+        stds[col] = (tot.count > 1) ? sqrt(tot.m_sq / (tot.count - 1)) : 0;
     }
-}
-
-template <typename dtype>
-__device__
-void check_matrix(const dtype* A, size_t M, size_t N)
-{
-    dtype nigger;
-    assert(M * N == 2200000);
-    for (size_t i = 0; i < M * N; ++i)
-    {
-        nigger = A[i];
-    }
-    nigger = A[M * N];
 }
 
 template <typename dtype, size_t M>
 __host__
 void welford(const dtype* A, size_t N, 
-             std::array<dtype, M>& means, std::array<dtype, M>& vars)
+             std::array<dtype, M>& means, std::array<dtype, M>& stds)
 {
-    check_matrix(A, M, N);
-    return;
     size_t row_n_bytes = M * sizeof(dtype);
-    double* d_means, *d_vars;
+    dtype* d_means, *d_stds;
     cudaMalloc(&d_means, row_n_bytes);
-    cudaMalloc(&d_vars, row_n_bytes);
+    cudaMalloc(&d_stds, row_n_bytes);
 
-    welford_step<dtype> <<<M, threads_per_block, threads_per_block * sizeof(WelfordState)>>>
-        (A, M, N, d_means, d_vars);
+    welford_step<dtype> <<<M, threads_per_block, threads_per_block * sizeof(WelfordState<dtype>)>>>
+        (A, M, N, d_means, d_stds);
     cudaDeviceSynchronize();
 
     cudaMemcpy(means.data(), d_means, row_n_bytes, cudaMemcpyDeviceToHost);
-    cudaMemcpy(vars.data(), d_vars, row_n_bytes, cudaMemcpyDeviceToHost);
+    cudaMemcpy(stds.data(), d_stds, row_n_bytes, cudaMemcpyDeviceToHost);   
     cudaFree(d_means);
-    cudaFree(d_vars);
+    cudaFree(d_stds);
 }
 };

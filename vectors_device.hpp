@@ -302,6 +302,50 @@ private:
     {
     }
 public:
+    class RowView // read & copy only object
+    {
+        const dtype* const ptr; // no ownership!
+    public:
+        RowView(dtype* ptr)
+            :ptr(ptr)
+        {
+        }
+
+        const dtype* data() const
+        {
+            return ptr;
+        }
+
+        constexpr size_t size() const
+        {
+            return M;
+        }
+        
+        DeviceArray<dtype, M> copy() const
+        {
+            DeviceArray<dtype, M> A;
+            cudaMalloc(&A.buf, M * sizeof(dtype));
+            cudaMemcpy(A.buf, data(), M * sizeof(dtype), cudaMemcpyDeviceToDevice);
+            return A;
+        }
+
+        std::array<dtype, M> to_host() const
+        {
+            std::array<dtype, M> host;
+            cudaMemcpy(host.data(), ptr, M * sizeof(dtype), cudaMemcpyDeviceToHost);
+            return host;
+        }
+
+        template <typename itype>
+        friend DeviceArray<dtype, M> operator * (itype A, RowView const& V)
+        {
+            static_assert(!std::is_same_v<itype, RowView>);
+            DeviceArray<dtype, M> U;
+            U.buf = device::vector_mul_scalar<dtype>(V.data(), A, M);
+            return U;
+        }
+    };
+
     static DeviceMatrix<dtype, M> get_empty(size_t size)
     {// Factory function to prevent misuse
         DeviceMatrix<dtype, M> A;
@@ -335,11 +379,9 @@ public:
         return buf;
     }
 
-    DeviceArray<dtype, M> operator [] (size_t idx) const
+    RowView operator [] (size_t idx) const
     {
-        DeviceArray<dtype, M> x;
-        x.buf = buf + idx * M;
-        return x;
+        return RowView(buf + idx * M);
     }
 };
 
@@ -448,6 +490,12 @@ inline dtype dot(DeviceVector<dtype> const& V, DeviceArray<dtype, M> const& U)
 
 template <typename dtype, size_t M>
 inline dtype dot(DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
+{
+    return device::vector_dot<dtype>(V.data(), U.data(), M);
+}
+
+template <typename dtype, size_t M>
+inline dtype dot(typename DeviceMatrix<dtype, M>::RowView const& V, DeviceArray<dtype, M> const& U)
 {
     return device::vector_dot<dtype>(V.data(), U.data(), M);
 }

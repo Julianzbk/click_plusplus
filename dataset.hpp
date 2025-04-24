@@ -186,6 +186,8 @@ public:
                   std::vector<std::string> ignore_features = std::vector<std::string>(),
                   size_t start_row = 0, size_t n_rows = limit)
     {
+        using std::endl, std::cout;
+
         std::ifstream fin(path);
         if (!fin.good())
             throw std::runtime_error("Bad file read");
@@ -258,10 +260,17 @@ public:
                     ++dest_i;
                 }
             }
-            row_ptr += n_features;
+            row_ptr += M;
         }
         cudaMemcpy(Y.data(), Y_buf.data(), Y_buf.size() * sizeof(dtype), cudaMemcpyHostToDevice);
         cudaMemcpy(X.data(), X_buf, n_rows * M * sizeof(dtype), cudaMemcpyHostToDevice);
+        /*
+        for (size_t i = 0; i < M * n_rows; ++i)
+        {
+            cout << X_buf[i] << ", ";
+        }
+        cout << "\n\n";
+        */
         delete[] X_buf;
     }
 
@@ -287,13 +296,17 @@ public:
     class TransformerFunctor
     {// Device functors have to be placed outside of __host__ functions to be visible.
     public:
-        dtype* mean;
-        dtype* std;
+        DeviceArray<dtype, M> mean;
+        DeviceArray<dtype, M> std;
+        dtype* mean_ptr = nullptr;
+        dtype* std_ptr = nullptr;
 
         TransformerFunctor(std::array<dtype, M> const& mean,
                             std::array<dtype, M> const& std)
-            :mean(to_device(mean).data()), std(to_device(std).data())
+            :mean(to_device(mean)), std(to_device(std))
         {
+            mean_ptr = this->mean.data();
+            std_ptr = this->std.data();
         }
 
         __device__
@@ -301,7 +314,10 @@ public:
         {
             for (size_t i = 0; i < M; ++i)
             {
-                row_ptr[i] = (row_ptr[i] - mean[i]) / std[i];
+                if (std_ptr[i] != 0)
+                    row_ptr[i] = (row_ptr[i] - mean_ptr[i]) / std_ptr[i];
+                else
+                    row_ptr[i] = 0; // if there's no variance then that feature is invalidated.
             }
         }
     };
