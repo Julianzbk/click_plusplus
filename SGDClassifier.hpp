@@ -33,10 +33,9 @@ inline bool float_approx(double a, double b, double epsilon = 1e-9)
     return std::fabs(a - b) < epsilon;
 }
 
+template <typename itype = size_t>
 class Rando
 {
-    using itype = size_t;
-
     std::mt19937 gen;
     std::uniform_int_distribution<> dist;
 public:
@@ -79,6 +78,15 @@ double error(std::vector<dtype> const& pred,
     return static_cast<double>(n_wrong) / pred.size();
 }
 
+#ifdef USE_CUDA
+template <typename dtype>
+double error(std::vector<dtype> const& pred,
+             DeviceVector<dtype> const& Y)
+{
+    return error(pred, Y.to_host());
+}
+#endif
+
 struct ConfusionMatrix
 {
     size_t true_negative = 0;
@@ -115,32 +123,32 @@ ConfusionMatrix confusion_matrix(std::vector<dtype> const& pred,
     return conf;
 }
 
-constexpr uint64_t FILE_MAGIC = 0x44454647452D4344;
+constexpr uint64_t FILE_MAGIC = 0x44432D4547464544;
 
 template <typename T>
 inline void dumps(std::ostream& out, T data)
 {
-    out.write(reinterpret_cast<const char*>(&data), sizeof(data));
+    out.write(reinterpret_cast<const char*>(&data), sizeof(T));
 }
 
 template <typename T>
-inline void dumps(std::ostream& out, const T& data, size_t n_bytes)
+inline void dumps(std::ostream& out, T* data, size_t n_bytes)
 {
-    out.write(reinterpret_cast<const char*>(&data), n_bytes);
+    out.write(reinterpret_cast<const char*>(data), n_bytes);
 }
 
-template <typename read_T>
-inline read_T loads(std::istream& in)
+template <typename T, typename file_T = char*>
+inline T loads(std::istream& in)
 {
-    read_T data;
-    in.read(reinterpret_cast<char*>(&data), sizeof(read_T));
+    T data;
+    in.read(reinterpret_cast<file_T>(&data), sizeof(T));
     return data;
 }
 
-template <typename read_T>
-inline void loads(std::istream& in, read_T* dest,size_t n_bytes)
+template <typename T, typename file_T = char*>
+inline void loads(std::istream& in, T* dest, size_t n_bytes)
 {
-    in.read(reinterpret_cast<read_T>(dest), n_bytes);
+    in.read(reinterpret_cast<file_T>(dest), n_bytes);
 }
 #pragma endregion utility
 
@@ -334,8 +342,10 @@ public:
         if (!fout)
             throw std::runtime_error("Bad file read");
         dumps(fout, FILE_MAGIC);
+        fout << ' ';
         size_t n_bytes = theta_.size() * sizeof(dtype);
         dumps(fout, n_bytes);
+        fout << '\n';
         #ifdef USE_CUDA
             dumps(fout, theta_.to_host().data(), n_bytes);
         #else
@@ -349,8 +359,18 @@ public:
         std::ifstream fin(path, std::ios::binary);
         if (loads<uint64_t>(fin) != FILE_MAGIC)
             throw std::runtime_error("Bad file read, not formatted correctly");
+        char blank;
+        fin.get(blank);
+        if (blank != ' ')
+            throw std::runtime_error("Bad file read, not formatted correctly");
+        
         size_t n_bytes = loads<size_t>(fin);
         assert(M == (n_bytes / sizeof(dtype)));
+        
+        fin.get(blank);
+        if (blank != '\n')
+            throw std::runtime_error("Bad file read, not formatted correctly");
+        
         std::array<dtype, M> theta_;
         loads(fin, theta_.data(), n_bytes);
         SGDClassifier model;

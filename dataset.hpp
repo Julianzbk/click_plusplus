@@ -186,8 +186,6 @@ public:
                   std::vector<std::string> ignore_features = std::vector<std::string>(),
                   size_t start_row = 0, size_t n_rows = limit)
     {
-        using std::endl, std::cout;
-
         std::ifstream fin(path);
         if (!fin.good())
             throw std::runtime_error("Bad file read");
@@ -226,7 +224,12 @@ public:
             std::cout << "No target label of name " << target_label << " found!" << std::endl;
         }
         }
-        // might get bad_alloc here
+        if (n_rows == limit)
+            std::cout << "Reading all lines starting from line " << start_row << std::endl;
+        else
+            std::cout << "Reading " << n_rows << " lines starting from line " << start_row << std::endl;
+        // WARN: might get bad_alloc here
+
         dtype* X_buf = new dtype[n_rows * M];
         dtype* row_ptr = X_buf;
         std::vector<dtype> Y_buf;
@@ -264,13 +267,6 @@ public:
         }
         cudaMemcpy(Y.data(), Y_buf.data(), Y_buf.size() * sizeof(dtype), cudaMemcpyHostToDevice);
         cudaMemcpy(X.data(), X_buf, n_rows * M * sizeof(dtype), cudaMemcpyHostToDevice);
-        /*
-        for (size_t i = 0; i < M * n_rows; ++i)
-        {
-            cout << X_buf[i] << ", ";
-        }
-        cout << "\n\n";
-        */
         delete[] X_buf;
     }
 
@@ -361,8 +357,10 @@ public:
             std::array<dtype, M> & x = X[i];
             for (size_t j = 0; j < M; ++j)
             {
-                if (std[j] > 0)
+                if (std[j] != 0)
                     x[j] = (x[j] - mean[j]) / std[j];
+                else 
+                    x[j] = 0; // if there's no variance then that feature is invalidated.
             }
         }
     }

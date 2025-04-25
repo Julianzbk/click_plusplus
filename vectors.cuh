@@ -380,7 +380,7 @@ __host__
 dtype* vector_mul_scalar(const dtype* V, dtype A, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
-        
+
     dtype* dest;
     cudaMalloc(&dest, N * sizeof(dtype));
 
@@ -512,7 +512,7 @@ itype vector_reduce(const dtype* V, size_t N, itype acc, UnaryOp thunk)
     unsigned int n_blocks = (N + threads_per_block * 2 - 1) / (threads_per_block * 2);
     itype* block_sums;
     cudaMalloc(&block_sums, n_blocks * sizeof(itype));
-    vector_reduce_step<dtype, itype, UnaryOp> <<<n_blocks, threads_per_block, threads_per_block * sizeof(dtype)>>>
+    vector_reduce_step<dtype, itype, UnaryOp> <<<n_blocks, threads_per_block, threads_per_block * sizeof(itype)>>>
         (block_sums, V, N, thunk);
     
     unsigned int n_blocks_2 = (n_blocks + threads_per_block * 2 - 1) / (threads_per_block * 2);
@@ -529,43 +529,30 @@ __global__
 void vector_double_reduce_step(itype* block_sums, const dtype* V, const dtype* U,
                                size_t N, BinaryOp thunk)
 {
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= N)
+    unsigned int tid = threadIdx.x;
+    unsigned int idx = blockIdx.x * blockDim.x + tid;
+
+    if (blockIdx.x * blockDim.x >= N)
         return;
 
     itype* cache = reinterpret_cast<itype*>(shared_cache);
-    
-    unsigned int tid = threadIdx.x;
-    unsigned int idx = blockIdx.x * blockDim.x * 2 + tid;
 
     itype acc = 0;
-    if (idx < N)
+    for (size_t i = idx; i < N; i += blockDim.x * gridDim.x)
     {
-        acc = thunk(V[idx], U[idx]);
+        acc += thunk(V[i], U[i]);
     }
-    if (idx + blockDim.x < N)
-    {
-        acc += thunk(V[idx + blockDim.x], U[idx + blockDim.x]);
-    }
+
     cache[tid] = acc;
     __syncthreads();
 
-    for (int s = blockDim.x / 2; s > 32; s >>= 1)
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1)
     {
         if (tid < s)
         {
             cache[tid] += cache[tid + s];
         }
         __syncthreads();
-    }
-    
-    if (tid < 32)
-    {
-        #pragma unroll
-        for (int s = 16; s > 0; s >>= 1)
-        {
-            cache[tid] += __shfl_down_sync(0xffffffff, cache[tid], s);
-        }
     }
 
     if (tid == 0)
@@ -579,19 +566,19 @@ __host__
 itype vector_double_reduce(const dtype* V, const dtype* U, size_t N,
                             itype acc, BinaryOp thunk)
 {
-    unsigned int n_blocks = (N + threads_per_block * 2 - 1) / (threads_per_block * 2);
-    itype* block_sums;
-    cudaMalloc(&block_sums, n_blocks * sizeof(itype));
+    unsigned int n_blocks = (N + threads_per_block - 1) / threads_per_block;
+    itype* d_sums;
+    cudaMalloc(&d_sums, n_blocks * sizeof(itype));
     vector_double_reduce_step<dtype, itype, BinaryOp> <<<n_blocks, threads_per_block, threads_per_block * sizeof(itype)>>>
-        (block_sums, V, U, N, thunk);
+        (d_sums, V, U, N, thunk);
     
-    unsigned int n_blocks_2 = (n_blocks + threads_per_block * 2 - 1) / (threads_per_block * 2);
-    vector_reduce_step<itype, itype> <<<n_blocks_2, threads_per_block, threads_per_block * sizeof(itype)>>>
-        (block_sums, block_sums, n_blocks_2, no_op);
-    itype sum;
-    cudaMemcpy(&sum, &block_sums[0], sizeof(itype), cudaMemcpyDeviceToHost);
-    cudaFree(block_sums);
-    return acc + sum;
+    std::vector<itype> h_sums(n_blocks);
+    cudaMemcpy(h_sums.data(), d_sums, n_blocks * sizeof(itype), cudaMemcpyDeviceToHost);
+    cudaFree(d_sums);
+
+    for (itype sum: h_sums)
+        acc += sum;
+    return acc;
 }
 
 template <typename dtype>

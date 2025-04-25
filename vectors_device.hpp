@@ -192,6 +192,14 @@ public:
         cudaMemcpy(buf, A.buf, M * sizeof(dtype), cudaMemcpyDeviceToDevice);
     }
 
+    DeviceArray& operator = (DeviceArray const& A)
+    {
+        cudaFree(buf);
+        cudaMalloc(&buf, M * sizeof(dtype));
+        cudaMemcpy(buf, A.buf, M * sizeof(dtype), cudaMemcpyDeviceToDevice);
+        return *this;
+    }
+
     DeviceArray(DeviceArray && A)
         :buf(A.buf)
     {
@@ -405,14 +413,14 @@ inline double scalar_log_loss_vector(dtype h, DeviceVector<dtype> const& Y)
 {
     device::LogLoser<dtype> log_loser;
     log_loser.h = h;
-    return device::vector_reduce<dtype, double, device::LogLoser<dtype>>(Y.data(), Y.size(), 0, log_loser);
+    return (double) device::vector_reduce<dtype, double, device::LogLoser<dtype>>(Y.data(), Y.size(), 0, log_loser) / Y.size();
 }
 
 template <typename dtype>
 inline double vector_log_loss_vector(DeviceVector<dtype> const& H, DeviceVector<dtype> const& Y)
 {
     assert(H.size() == Y.size());
-    return device::vector_double_reduce<dtype, double>(H.data(), Y.data(), Y.size(), 0, device::log_loss);
+    return (double) device::vector_double_reduce<dtype, double>(H.data(), Y.data(), Y.size(), 0, device::log_loss) / Y.size();
 }
 #pragma endregion functions
 
@@ -536,7 +544,13 @@ template <typename dtype>
 double error(DeviceVector<dtype> const& pred,
              DeviceVector<dtype> const& Y)
 {
-    
-    size_t n_wrong = device::vector_double_reduce(pred.data(), Y.data(), pred.size(), 0ULL, ErrorFunctor<dtype>());
-    return n_wrong / pred.size();
+    size_t n_wrong = device::vector_double_reduce<dtype, size_t>(pred.data(), Y.data(), pred.size(), 0ULL, ErrorFunctor<dtype>());
+    return (double) n_wrong / pred.size();
+}
+
+template <typename dtype>
+double error(DeviceVector<dtype> const& pred,
+             std::vector<dtype> const& Y)
+{
+    return error(pred, to_device(Y));
 }
