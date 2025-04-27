@@ -72,7 +72,7 @@ void vector_dot_step(const dtype* A, const dtype* B, dtype* partial, size_t N)
     
     unsigned int tid = threadIdx.x;
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-
+    
     cache[tid] = (i < N) ? A[i] * B[i] : dtype(); // operation step
     __syncthreads();
     
@@ -313,7 +313,7 @@ dtype vector_dot(const dtype* d_A, const dtype* d_B, size_t N)
 
 template <class dtype>
 __host__
-dtype* vector_add_vector(const dtype* V, const dtype* U, size_t N)
+[[nodiscard]] dtype* vector_add_vector(const dtype* V, const dtype* U, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
@@ -338,7 +338,7 @@ void vector_addassign_vector(dtype* V, const dtype* U, size_t N)
 
 template <class dtype>
 __host__
-dtype* vector_sub_scalar(const dtype* V, dtype A, size_t N)
+[[nodiscard]] dtype* vector_sub_scalar(const dtype* V, dtype A, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
@@ -352,7 +352,7 @@ dtype* vector_sub_scalar(const dtype* V, dtype A, size_t N)
 
 template <class dtype>
 __host__
-dtype* vector_sub_vector(const dtype* V, const dtype* U, size_t N)
+[[nodiscard]] dtype* vector_sub_vector(const dtype* V, const dtype* U, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
@@ -377,7 +377,7 @@ void vector_subassign_vector(dtype* V, const dtype* U, size_t N)
 
 template <class dtype>
 __host__
-dtype* vector_mul_scalar(const dtype* V, dtype A, size_t N)
+[[nodiscard]] dtype* vector_mul_scalar(const dtype* V, dtype A, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
@@ -392,7 +392,7 @@ dtype* vector_mul_scalar(const dtype* V, dtype A, size_t N)
 
 template <class dtype>
 __host__
-dtype* vector_div_scalar(const dtype* V, dtype A, size_t N)
+[[nodiscard]] dtype* vector_div_scalar(const dtype* V, dtype A, size_t N)
 {// Transfers ownership of a live pointer!
     const size_t blocks_per_grid = (N + threads_per_block - 1) / threads_per_block;
 
@@ -407,7 +407,7 @@ dtype* vector_div_scalar(const dtype* V, dtype A, size_t N)
 
 template <typename dtype>
 __host__
-dtype* vector_dot_matrix(const dtype* T, const dtype* X, size_t M, size_t N, dtype bias)
+[[nodiscard]] dtype* vector_dot_matrix(const dtype* T, const dtype* X, size_t M, size_t N, dtype bias)
 {// Transfers ownership of a live pointer!
     dtype* dest;
     cudaMalloc(&dest, M * N * sizeof(dtype));
@@ -418,7 +418,7 @@ dtype* vector_dot_matrix(const dtype* T, const dtype* X, size_t M, size_t N, dty
 
 template <typename dtype, class UnaryOp>
 __host__
-dtype* vector_transform(const dtype* X, size_t N, dtype bias, UnaryOp thunk)
+[[nodiscard]] dtype* vector_transform(const dtype* X, size_t N, dtype bias, UnaryOp thunk)
 {// Transfers ownership of a live pointer!
     dtype* dest;
     cudaMalloc(&dest, N * sizeof(dtype));
@@ -446,7 +446,7 @@ void matrix_inplace_transform(dtype* A, size_t M, size_t N, UnaryOp thunk)
 
 template <typename dtype, class UnaryOp>
 __host__
-dtype* vector_dot_matrix_transform(const dtype* T, const dtype* X, size_t M, size_t N,
+[[nodiscard]] dtype* vector_dot_matrix_transform(const dtype* T, const dtype* X, size_t M, size_t N,
                                    dtype bias, UnaryOp thunk)
 {// Transfers ownership of a live pointer!
     dtype* dest;
@@ -469,7 +469,7 @@ void vector_reduce_step(itype* block_sums, const dtype* V, size_t N, UnaryOp thu
     unsigned int tid = threadIdx.x;
     unsigned int idx = blockIdx.x * blockDim.x * 2 + tid;
 
-    itype acc = 0;
+    itype acc = itype();
     if (idx < N)
     {
         acc = thunk(V[idx]);
@@ -537,7 +537,7 @@ void vector_double_reduce_step(itype* block_sums, const dtype* V, const dtype* U
 
     itype* cache = reinterpret_cast<itype*>(shared_cache);
 
-    itype acc = 0;
+    itype acc = itype();
     for (size_t i = idx; i < N; i += blockDim.x * gridDim.x)
     {
         acc += thunk(V[i], U[i]);
@@ -575,7 +575,6 @@ itype vector_double_reduce(const dtype* V, const dtype* U, size_t N,
     std::vector<itype> h_sums(n_blocks);
     cudaMemcpy(h_sums.data(), d_sums, n_blocks * sizeof(itype), cudaMemcpyDeviceToHost);
     cudaFree(d_sums);
-
     for (itype sum: h_sums)
         acc += sum;
     return acc;

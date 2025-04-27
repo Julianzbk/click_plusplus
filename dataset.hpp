@@ -31,6 +31,7 @@ class Dataset
 {
 public:
     std::array<std::string, M> features;
+    size_t n_rows;
     std::vector<std::array<dtype, M>> X;
     std::vector<dtype> Y;
 
@@ -39,6 +40,7 @@ public:
     Dataset(std::string const& path, std::string const& target_label,
             std::vector<std::string> ignore_features = std::vector<std::string>(),
             size_t start_row = 0, size_t n_rows = limit)
+        :n_rows(n_rows)
     {
         X.reserve(n_rows);
         Y.reserve(n_rows);
@@ -69,7 +71,10 @@ public:
     {
         std::ifstream fin(path);
         if (!fin.good())
-            throw std::runtime_error("Bad file read");
+        {
+            std::cerr << "Bad file read: " << path << std::endl;
+            throw std::runtime_error("Bad file read: " + path);
+        }
         std::string line;
         std::string field;
         size_t target_i = SIZE_MAX;
@@ -143,6 +148,12 @@ public:
     {
         out << "X:(" << X.size() << ", " << X[0].size() << "), Y:(" << Y.size() << ")" << std::endl;
     }
+
+    void print_point(size_t idx, std::ostream& out = std::cout) const
+    {
+        zip_print<std::string, dtype, M>(features, X[idx], out);
+        out << " -> " << Y[idx];
+    }
 };
 
 template <typename dtype = float, size_t M = n_features>
@@ -150,6 +161,7 @@ class DeviceDataset
 {
 public:
     std::array<std::string, M> features;
+    size_t n_rows;
     DeviceMatrix<dtype, M> X;
     DeviceVector<dtype> Y;
 
@@ -159,7 +171,8 @@ public:
                   std::vector<std::string> ignore_features = std::vector<std::string>(),
                   size_t start_row = 0, size_t n_rows = limit)
         :X(DeviceMatrix<dtype, M>::get_empty(n_rows)),
-         Y(DeviceVector<dtype>::get_empty(n_rows))
+         Y(DeviceVector<dtype>::get_empty(n_rows)),
+         n_rows(n_rows)
     {
         read_csv(path, target_label, ignore_features, start_row, n_rows);
     }
@@ -188,7 +201,10 @@ public:
     {
         std::ifstream fin(path);
         if (!fin.good())
-            throw std::runtime_error("Bad file read");
+        {
+            std::cerr << "Bad file read: " << path << std::endl;
+            throw std::runtime_error("Bad file read: " + path);
+        }
         std::string line;
         std::string field;
         size_t target_i = SIZE_MAX;
@@ -224,7 +240,7 @@ public:
             std::cout << "No target label of name " << target_label << " found!" << std::endl;
         }
         }
-        if (n_rows == limit)
+        if (n_rows == SIZE_MAX)
             std::cout << "Reading all lines starting from line " << start_row << std::endl;
         else
             std::cout << "Reading " << n_rows << " lines starting from line " << start_row << std::endl;
@@ -274,8 +290,13 @@ public:
     {
         out << "X:(" << X.size() << ", " << M << "), Y:(" << Y.size() << ")" << std::endl;
     }
-};
 
+    void print_point(size_t idx, std::ostream& out = std::cout) const
+    {
+        zip_print<std::string, dtype, M>(features, X[idx].to_host(), out);
+        out << "\ntarget: ↳ " << Y[idx] << std::endl;
+    }
+};
 
 template <typename dtype = float, size_t M = n_features>
 class StandardScaler
@@ -365,4 +386,47 @@ public:
         }
     }
 #endif
+    void export_file(std::string const& path)
+    {
+        std::ofstream fout(path, std::ios::binary);
+        if (!fout)
+        {
+            std::cerr << "Bad file read: " << path << std::endl;
+            throw std::runtime_error("Bad file read: " + path);
+        }
+        dumps(fout, FILE_MAGIC);
+        fout << " StandardScaler " << typeid(dtype).name() << " " << M << "\n";
+        size_t n_bytes = mean.size() * sizeof(dtype);
+        dumps(fout, n_bytes);
+        fout << '\n';
+        dumps(fout, mean.data(), n_bytes);
+        dumps(fout, std.data(), n_bytes);
+        std::cout << "Exported StandardScaler to " << path << std::endl;
+    }
+
+    static StandardScaler import_file(std::string const& path)
+    {
+        std::cout << "Importing StandardScaler from " << path << std::endl;
+        std::ifstream fin(path, std::ios::binary);
+        if (loads<uint64_t>(fin) != FILE_MAGIC)
+        {
+            std::cerr << "Bad file read, not formatted correctly" << std::endl;
+            throw std::runtime_error("Bad file read, not formatted correctly");
+        }
+        std::string word;
+        fin >> word;
+        word_assert(word, "StandardScaler", "Wrong model, check weights file");
+        fin >> word;
+        // Can't assert typeid(dtype).name()
+        fin >> word;
+        word_assert(word, std::to_string(M), "Wrong n_features, check weights file");
+        getline(fin, word);
+        size_t n_bytes = loads<size_t>(fin);
+        assert(M == (n_bytes / sizeof(dtype)));
+        getline(fin, word);
+        StandardScaler scaler;
+        loads(fin, scaler.mean.data(), n_bytes);
+        loads(fin, scaler.std.data(), n_bytes);
+        return scaler;
+    }
 };

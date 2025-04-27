@@ -12,45 +12,7 @@
 #include <array>
 #include <vector>
 
-// CUDA API
 #include <cuda_runtime.h>
-#include <cuda_bf16.h>
-#pragma region bf16_operators
-// Inefficient host-side operators that casts to float first.
-// If using dtype = bf16, the model should do all operations in CUDA device.
-std::ostream& operator << (std::ostream& out, nv_bfloat16 bf)
-{
-    out << static_cast<float>(bf);
-    return out;
-}
-
-auto operator <=> (nv_bfloat16 lhs, nv_bfloat16 rhs)
-{
-    return static_cast<float>(lhs) <=> static_cast<float>(rhs);
-}
-
-template <typename itype>
-auto operator <=> (nv_bfloat16 lhs, itype rhs)
-{
-    static_assert(!std::is_same<itype, nv_bfloat16>::value);
-    return static_cast<float>(lhs) <=> rhs;
-}
-
-template <typename itype>
-nv_bfloat16 operator * (itype lhs, nv_bfloat16 rhs)
-{
-    static_assert(!std::is_same<itype, nv_bfloat16>::value);
-    return lhs * static_cast<float>(rhs);
-}
-
-template <typename itype>
-nv_bfloat16 operator / (nv_bfloat16 lhs, itype rhs)
-{
-    static_assert(!std::is_same<itype, nv_bfloat16>::value);
-    return static_cast<float>(lhs), rhs;
-}
-#pragma endregion bf16_operators
-
 
 template <class dtype>
 class DeviceVector
@@ -389,6 +351,11 @@ public:
 
     RowView operator [] (size_t idx) const
     {
+        if (idx >= size())
+        {
+            std::cerr << "DeviceMatrix[idx]: idx out of range" << std::endl;
+            throw std::out_of_range("DeviceMatrix[idx]: idx out of range");
+        }
         return RowView(buf + idx * M);
     }
 };
@@ -489,12 +456,14 @@ inline dtype dot(DeviceVector<dtype> const& V, DeviceVector<dtype> const& U)
     return device::vector_dot<dtype>(V.data(), U.data(), V.size());
 }
 
+/*
 template <typename dtype, size_t M>
 inline dtype dot(DeviceVector<dtype> const& V, DeviceArray<dtype, M> const& U)
 {
     assert(V.size() == M);
     return device::vector_dot<dtype>(V.data(), U.data(), M);
 }
+*/
 
 template <typename dtype, size_t M>
 inline dtype dot(DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
@@ -503,7 +472,7 @@ inline dtype dot(DeviceArray<dtype, M> const& V, DeviceArray<dtype, M> const& U)
 }
 
 template <typename dtype, size_t M>
-inline dtype dot(typename DeviceMatrix<dtype, M>::RowView const& V, DeviceArray<dtype, M> const& U)
+inline dtype dot(DeviceArray<dtype, M> const& V, typename DeviceMatrix<dtype, M>::RowView const& U)
 {
     return device::vector_dot<dtype>(V.data(), U.data(), M);
 }
@@ -528,29 +497,4 @@ DeviceVector<dtype> dot_transform(DeviceArray<dtype, M> const& T,
     Y.size_ = X.size();
     Y.buf = device::vector_dot_matrix_transform<dtype>(T.data(), X.data(), M, X.size(), bias, thunk);
     return Y;
-}
-
-template <typename dtype>
-struct ErrorFunctor
-{
-    __device__
-    size_t operator () (dtype pred, dtype Y) const
-    {
-        return (pred != Y) ? 1 : 0;
-    }
-};
-
-template <typename dtype>
-double error(DeviceVector<dtype> const& pred,
-             DeviceVector<dtype> const& Y)
-{
-    size_t n_wrong = device::vector_double_reduce<dtype, size_t>(pred.data(), Y.data(), pred.size(), 0ULL, ErrorFunctor<dtype>());
-    return (double) n_wrong / pred.size();
-}
-
-template <typename dtype>
-double error(DeviceVector<dtype> const& pred,
-             std::vector<dtype> const& Y)
-{
-    return error(pred, to_device(Y));
 }

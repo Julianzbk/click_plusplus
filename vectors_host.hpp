@@ -180,6 +180,7 @@ dtype dot(std::vector<dtype> const& V, std::vector<dtype> const& U)
     return acc;
 }
 
+/*
 template <typename dtype, size_t M>
 dtype dot(std::vector<dtype> const& V, std::array<dtype, M> const& U)
 {
@@ -190,6 +191,7 @@ dtype dot(std::vector<dtype> const& V, std::array<dtype, M> const& U)
     }
     return acc;
 }
+*/
 
 template <typename dtype, size_t M>
 dtype dot(std::array<dtype, M> const& V, std::array<dtype, M> const& U)
@@ -211,7 +213,7 @@ std::vector<dtype> dot(std::array<dtype, M> const& T,
     std::vector<dtype> Y(N);
     for (size_t i = 0; i < N; ++i)
     {
-        Y[i] = dot(X[i], T) + bias;
+        Y[i] = dot(T, X[i]) + bias;
     }
     return Y;
 }
@@ -225,7 +227,7 @@ std::vector<dtype> dot_transform(std::array<dtype, M> const& T,
     std::vector<dtype> Y(N);
     for (size_t i = 0; i < N; ++i)
     {
-        Y[i] = thunk(dot(X[i], T) + bias);
+        Y[i] = thunk(dot(T, X[i]) + bias);
     }
     return Y;
 }

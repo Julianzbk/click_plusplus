@@ -1,0 +1,1 @@
+nvcc -x cu "example.cpp" -o "example.exe" -I../ -std=c++20 -O3 -arch=sm_75 -extended-lambda

@@ -3,6 +3,9 @@ Click-through rate Regressor implemented in C++ with fully customized CUDA-accel
 Skills explored: **Logistic Regression**, **CUDA kernels**, **Gradient Descent**, Linear Regression, Impl of Chain Rule, Linear Algebra. <br>
 Frameworks used: C++, CUDA, Tableau, GTest
 
+# Quick demo
+Unzip profile.zip and run profile.exe 
+
 # How to use this model
 1. ```#include "SGDClassifier.hpp"```, which includes all other necessary headers. <br>
     a. ```#define USE_CUDA``` to enable CUDA acceleration, this will replace API of STL containers with that of device-side containers.
