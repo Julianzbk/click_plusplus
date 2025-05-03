@@ -1,10 +1,10 @@
 # click_plusplus
-Click-through rate Regressor implemented in C++ with fully customized CUDA-accelerated computations. <br>
-Skills explored: **Logistic Regression**, **CUDA kernels**, **Gradient Descent**, Linear Regression, Impl of Chain Rule, Linear Algebra. <br>
+Click-through rate predictor implemented in C++, with from-scratch CUDA-accelerated computations library. <br>
+Skills explored: **Logistic Regression**, **CUDA kernels**, **Gradient Descent**, Impl of Pytorch, Linear Regression, Impl of Chain Rule, Linear Algebra. <br>
 Frameworks used: C++, CUDA, Tableau, GTest
 
 # Quick demo
-Unzip profile.zip and run profile.exe 
+Unzip profile.zip and run profile.bat, which initializes a classifier model, and reads Datasets from . Time elapsed in each operation is measured, compare host and device performance and decide whether to use hardware accelerations or not.
 
 # How to use this model
 1. ```#include "SGDClassifier.hpp"```, which includes all other necessary headers. <br>
@@ -15,5 +15,11 @@ Unzip profile.zip and run profile.exe
     b. With CUDA enabled, the model instead uses ```DeviceMatrix``` and ```DeviceVector```, but stil supports STL arguments. <br>
 4. Do regression with ```Vector SGDClassifier::predict(Matrix)```, which produces binary outputs, or ```predict_proba``, which produces probabilities of the output being 1.
 
-# SGD Classifier
-This is a linear regression classifier that uses a logistic sigmoid activation function to produce probabilistic outputs. The linear weights are trained via Stochastic Gradient Descent with L1 regularization.
+# Custom library
+Header-only libraries that introduce a myriad of generic-compatible Data structures, algorithms, and utility.
+
+## dataset.hpp
+Read a single csv file into feature (X) and target (Y) vectors, skip the features you don't want.
+
+## SGDClassifier.hpp
+This is a linear regression classifier that uses a logistic sigmoid activation function to produce probabilistic outputs. The linear weights are trained via Stochastic Gradient Descent with L1 regularization. The loss curve is calculated at every epoch to enable convergence early-stopping.

@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <concepts>
+#include <cmath>
 
 #pragma region containers
 #include <array>

@@ -5,7 +5,9 @@
 #include <algorithm>
 
 #include "vectors_host.hpp"
-#include "vectors_device.hpp"
+#ifdef USE_CUDA
+    #include "vectors_device.hpp"
+#endif
 
 #ifdef LIMIT
     constexpr size_t limit = LIMIT;
@@ -156,6 +158,7 @@ public:
     }
 };
 
+#ifdef USE_CUDA
 template <typename dtype = float, size_t M = n_features>
 class DeviceDataset
 {
@@ -297,6 +300,7 @@ public:
         out << "\ntarget: ↳ " << Y[idx] << std::endl;
     }
 };
+#endif
 
 template <typename dtype = float, size_t M = n_features>
 class StandardScaler
@@ -343,7 +347,7 @@ public:
     {
         matrix_inplace_transform<dtype>(X.data(), M, X.size(), TransformerFunctor(mean, std));
     }
-#else
+#endif
     void fit(std::vector<std::array<dtype, M>> const& X)
     {
         // Welford's algorithm:
@@ -385,7 +389,7 @@ public:
             }
         }
     }
-#endif
+
     void export_file(std::string const& path)
     {
         std::ofstream fout(path, std::ios::binary);

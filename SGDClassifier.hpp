@@ -40,7 +40,7 @@ class SGDClassifier
     using Vector = std::vector<dtype>;
     using Array = std::array<dtype, M>;
     using Matrix = std::vector<std::array<dtype, M>>;
-    using RowView = std::array<dtype, M>;
+    using RowView = std::array<dty pe, M>;
 #endif
 public:
     Array theta_;
@@ -273,21 +273,3 @@ public:
         return model;
     }
 };
-
-void test_example()
-{
-    /*
-    using bf16 = nv_bfloat16;
-    using std::cout, std::endl;
-    auto model = SGDClassifier<bf16, 2>(0.1, 0.01, 1000);
-    std::vector<std::array<bf16, 2>> X_tr(4);
-    X_tr[0] = std::array<bf16, 2>({1.0, 2.0});
-    X_tr[1] = std::array<bf16, 2>({0.25, 0.2});
-    X_tr[2] = std::array<bf16, 2>({0.0, 0.0});
-    X_tr[3] = std::array<bf16, 2>({0.6, 1.25});
-    std::vector<bf16> y_tr = {1, 0, 0, 1};
-    model.fit(X_tr, y_tr);
-    cout << model.theta_ << ", " << model.bias_ << endl;
-    cout << model.predict({{2, 1}, {0, -1}, {0, 3}}) << endl;
-    */
-}
