@@ -4,7 +4,7 @@ Skills explored: **Logistic Regression**, **CUDA kernels**, **Gradient Descent**
 Frameworks used: C++, CUDA, Tableau, GTest
 
 # Quick demo
-Unzip profile.zip and run profile.bat, which initializes a classifier model, and reads Datasets from . Time elapsed in each operation is measured, compare host and device performance and decide whether to use hardware accelerations or not.
+Unzip profile.zip and run profile.bat, which trains a classifier model on the train.csv dataset, and assesses its prediction accuracy. Time elapsed in each operation is measured, compare host and device performance and decide whether to use hardware accelerations or not.
 
 # How to use this model
 1. ```#include "SGDClassifier.hpp"```, which includes all other necessary headers. <br>
