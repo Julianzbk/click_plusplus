@@ -4,7 +4,8 @@ Skills explored: **Logistic Regression**, **CUDA kernels**, **Gradient Descent**
 Frameworks used: C++, CUDA, Tableau, GTest
 
 # Quick demo
-Unzip profile.zip and run profile.bat, which trains a classifier model on the train.csv dataset, and assesses its prediction accuracy. Time elapsed in each operation is measured, compare host and device performance and decide whether to use hardware accelerations or not.
+Unzip profile.zip and run profile.bat, which trains a classifier model on the train.csv dataset, and assesses its prediction accuracy. Time elapsed in each operation is measured, compare host and device performance and decide whether to use hardware accelerations or not. <br><br>
+```example/example.exe``` loads a pre-trained model, complete with source file ```example.cpp``` that demonstrate model and library interface. <br>
 
 # How to use this model
 1. ```#include "SGDClassifier.hpp"```, which includes all other necessary headers. <br>
@@ -18,8 +19,11 @@ Unzip profile.zip and run profile.bat, which trains a classifier model on the tr
 # Custom library
 Header-only libraries that introduce a myriad of generic-compatible Data structures, algorithms, and utility.
 
-## dataset.hpp
-Read a single csv file into feature (X) and target (Y) vectors, skip the features you don't want.
+### SGDClassifier.hpp
+A linear regression classifier that uses a logistic sigmoid activation function to produce probabilistic outputs. The linear weights are trained via Stochastic Gradient Descent with L1 regularization. The loss curve is calculated at every epoch to enable convergence early-stopping.
 
-## SGDClassifier.hpp
-This is a linear regression classifier that uses a logistic sigmoid activation function to produce probabilistic outputs. The linear weights are trained via Stochastic Gradient Descent with L1 regularization. The loss curve is calculated at every epoch to enable convergence early-stopping.
+### vectors_device.hpp
+Create vectors and matrices that live on the GPU, and run any algorithms in parallel with blazing speed.
+
+### dataset.hpp
+Read a single csv file into feature (X) and target (Y) vectors. Skip the features you don't want, transform select features, and normalize the dataset.
