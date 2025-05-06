@@ -1,5 +1,5 @@
 # click_plusplus
-Click-through rate predictor implemented in C++, powered by a CUDA-accelerated computations library made from-scratch. <br>
+Click-through rate predictor implemented in C++, powered by CUDA-accelerated computations library made from-scratch. <br>
 Skills explored: **Logistic Regression**, **CUDA kernels**, **Gradient Descent**, Impl of Pytorch, Linear Regression, Impl of Chain Rule, Linear Algebra. <br>
 Frameworks used: C++, CUDA, Tableau, GTest.
 
