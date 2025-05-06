@@ -1,7 +1,7 @@
 # click_plusplus
 Click-through rate predictor implemented in C++, with from-scratch CUDA-accelerated computations library. <br>
 Skills explored: **Logistic Regression**, **CUDA kernels**, **Gradient Descent**, Impl of Pytorch, Linear Regression, Impl of Chain Rule, Linear Algebra. <br>
-Frameworks used: C++, CUDA, Tableau, GTest
+Frameworks used: C++, CUDA, Tableau, GTest.
 
 # Quick demo
 Unzip profile.zip and run profile.bat, which trains a classifier model on the train.csv dataset, and assesses its prediction accuracy. Time elapsed in each operation is measured, compare host and device performance and decide whether to use hardware accelerations or not. <br><br>
