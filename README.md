@@ -14,7 +14,7 @@ Unzip profile.zip and run profile.bat, which trains a classifier model on the tr
 3. Train the model with ```SGDClassifier::fit(Matrix, Vector)```. <br>
     a. With no CUDA, ```Matrix``` is defined as ```std::vector<std::array<dtype, M>>```, and ```Vector``` is simply ```std::vector<dtype>``` <br>
     b. With CUDA enabled, the model instead uses ```DeviceMatrix``` and ```DeviceVector```, but stil supports STL arguments. <br>
-4. Do regression with ```Vector SGDClassifier::predict(Matrix)```, which produces binary outputs, or ```predict_proba``, which produces probabilities of the output being 1.
+4. Do regression with ```Vector SGDClassifier::predict(Matrix)```, which produces binary outputs, or ```predict_proba```, which produces probabilities of the output being 1.
 
 # Custom library
 Header-only libraries that introduce a myriad of generic-compatible Data structures, algorithms, and utility.
